@@ -72,7 +72,13 @@ final class FileExplorerViewModel {
     // MARK: - File Operations
 
     func openItem(_ item: FileItem) {
-        if item.isDirectory { navigate(to: item.url) } else { NSWorkspace.shared.open(item.url) }
+        // .app などのパッケージはディレクトリでもダブルクリックで起動する（Finder と同じ挙動）
+        if item.isDirectory && !item.isPackage { navigate(to: item.url) } else { NSWorkspace.shared.open(item.url) }
+    }
+
+    // パッケージの中身をファイルブラウザとして開く（右クリック「パッケージの内容を表示」用）
+    func showPackageContents(_ item: FileItem) {
+        navigate(to: item.url)
     }
 
     func renameItem(_ item: FileItem, to newName: String) {
