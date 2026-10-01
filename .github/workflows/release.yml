@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches MARKETING_VERSION
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PROJECT_VERSIONS=$(grep -o 'MARKETING_VERSION = [^;]*' Vela.xcodeproj/project.pbxproj | sed 's/MARKETING_VERSION = //' | sort -u)
+          if [ "$PROJECT_VERSIONS" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match MARKETING_VERSION ($PROJECT_VERSIONS)"
+            exit 1
+          fi
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build dmg
+        run: scripts/build-dmg.sh
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" build/Vela-*.dmg \
+            --title "Vela ${GITHUB_REF_NAME#v}" \
+            --generate-notes

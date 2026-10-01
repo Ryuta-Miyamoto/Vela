@@ -5,7 +5,7 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 ## Requirements
 
 - macOS 14 Sonoma or later
-- Xcode 15 or later
+- Xcode 26 or later (to build from source)
 
 ## Features
 
@@ -63,7 +63,17 @@ Vela/
     └── FileService.swift      # Directory reading via FileManager
 ```
 
+## Installation
+
+1. Download `Vela-x.x.dmg` from [Releases](https://github.com/Ryuta-Miyamoto/Vela/releases)
+2. Open the dmg and drag `Vela.app` into the `Applications` folder
+3. The app is not signed with an Apple Developer ID, so macOS blocks it on first launch. To allow it, either:
+   - Open **System Settings → Privacy & Security** and click **Open Anyway** next to the message about Vela, or
+   - Run `xattr -dr com.apple.quarantine /Applications/Vela.app` in Terminal
+
 ## Build
+
+To create a release dmg, run `scripts/build-dmg.sh` (output: `build/Vela-<version>.dmg`).
 
 ```bash
 git clone https://github.com/Ryuta-Miyamoto/Vela.git
@@ -86,7 +96,7 @@ macOS 向けのシンプルなファイルエクスプローラーアプリで�
 ## 動作環境
 
 - macOS 14 Sonoma 以降
-- Xcode 15 以降
+- Xcode 26 以降（ソースからビルドする場合）
 
 ## 機能
 
@@ -144,7 +154,17 @@ Vela/
     └── FileService.swift      # FileManager によるディレクトリ読み込み
 ```
 
+## インストール
+
+1. [Releases](https://github.com/Ryuta-Miyamoto/Vela/releases) から `Vela-x.x.dmg` をダウンロード
+2. dmg を開き、`Vela.app` を `Applications` フォルダへドラッグ
+3. Apple Developer ID で署名していないため、初回起動時に macOS にブロックされます。次のどちらかの方法で許可してください
+   - **システム設定 → プライバシーとセキュリティ** を開き、Vela についてのメッセージの横にある **このまま開く** をクリック
+   - ターミナルで `xattr -dr com.apple.quarantine /Applications/Vela.app` を実行
+
 ## ビルド方法
+
+リリース用の dmg は `scripts/build-dmg.sh` で作成できます（出力先：`build/Vela-<バージョン>.dmg`）。
 
 ```bash
 git clone https://github.com/Ryuta-Miyamoto/Vela.git
