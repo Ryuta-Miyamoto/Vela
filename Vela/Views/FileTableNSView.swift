@@ -59,6 +59,8 @@ final class FileTableCoordinator: NSObject {
 
     private var currentSortState = FileSortState(key: "", ascending: true)
     private var isUpdatingSortIndicator = false
+    // show(relativeTo:of:preferredEdge:) はピッカーを保持しないため、表示中は強参照が必要
+    private var sharingPicker: NSSharingServicePicker?
 
     let tableView = ResponsiveTableView()
 
@@ -358,6 +360,8 @@ extension FileTableCoordinator: NSMenuDelegate {
             let item = items[row]
             addMenuItem(to: menu, title: "開く",       action: #selector(menuOpenItem))
             menu.addItem(.separator())
+            addMenuItem(to: menu, title: "共有", action: #selector(menuShareItem))
+            menu.addItem(.separator())
             addMenuItem(to: menu, title: "名前を変更", action: #selector(menuRenameItem))
             addMenuItem(to: menu, title: "コピー",     action: #selector(menuCopyItem))
             addMenuItem(to: menu, title: "移動",       action: #selector(menuMoveItem))
@@ -365,6 +369,8 @@ extension FileTableCoordinator: NSMenuDelegate {
                 menu.addItem(.separator())
                 addMenuItem(to: menu, title: "お気に入りに追加", action: #selector(menuAddToFavorites))
             }
+            menu.addItem(.separator())
+            addMenuItem(to: menu, title: "プロパティ", action: #selector(menuPropertiesItem))
             menu.addItem(.separator())
 
             let trashTitle: String
@@ -421,18 +427,36 @@ extension FileTableCoordinator: NSMenuDelegate {
         onAddToFavorites?(items[row])
     }
 
+    @objc private func menuShareItem() {
+        let row = tableView.clickedRow
+        guard row >= 0, row < items.count else { return }
+        let urls = contextTargets(forClickedRow: row).map(\.url)
+        let picker = NSSharingServicePicker(items: urls)
+        sharingPicker = picker
+        picker.show(relativeTo: tableView.rect(ofRow: row), of: tableView, preferredEdge: .maxX)
+    }
+
+    @objc private func menuPropertiesItem() {
+        let row = tableView.clickedRow
+        guard row >= 0, row < items.count else { return }
+        viewModel?.openFinderInfoWindow(for: items[row])
+    }
+
     @objc private func menuTrashItem() {
         let clickedRow = tableView.clickedRow
         guard clickedRow >= 0, clickedRow < items.count else { return }
-
-        let targets: [FileItem]
-        if tableView.selectedRowIndexes.contains(clickedRow) && tableView.selectedRowIndexes.count > 1 {
-            targets = tableView.selectedRowIndexes.compactMap { $0 < items.count ? items[$0] : nil }
-        } else {
-            targets = [items[clickedRow]]
-        }
-        showTrashAlert(for: targets)
+        showTrashAlert(for: contextTargets(forClickedRow: clickedRow))
     }
+
+    // 右クリックした行が複数選択の一部ならその全選択、そうでなければ単一行を対象にする
+    private func contextTargets(forClickedRow row: Int) -> [FileItem] {
+        guard row >= 0, row < items.count else { return [] }
+        if tableView.selectedRowIndexes.contains(row) && tableView.selectedRowIndexes.count > 1 {
+            return tableView.selectedRowIndexes.compactMap { $0 < items.count ? items[$0] : nil }
+        }
+        return [items[row]]
+    }
+
 }
 
 // MARK: - ResponsiveTableView

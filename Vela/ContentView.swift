@@ -75,6 +75,25 @@ final class FileExplorerViewModel {
         if item.isDirectory { navigate(to: item.url) } else { NSWorkspace.shared.open(item.url) }
     }
 
+    // 右クリック「プロパティ」用：自前のダイアログではなく Finder 本物の「情報を見る」ウインドウを開く。
+    // Finder への Apple Event 送信となるため、初回は Automation の許可が必要（Info.plist に説明文を用意済み）。
+    func openFinderInfoWindow(for item: FileItem) {
+        let escapedPath = item.url.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Finder"
+            activate
+            open information window of (POSIX file "\(escapedPath)" as alias)
+        end tell
+        """
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if let error {
+            NSLog("Finder情報ウインドウを開けませんでした: \(error)")
+        }
+    }
+
     func renameItem(_ item: FileItem, to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, trimmed != item.name else { return }
