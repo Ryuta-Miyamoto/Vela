@@ -17,6 +17,8 @@ struct FileItem: Identifiable, Equatable, Hashable {
     let size: Int64
     let modifiedDate: Date
     let isDirectory: Bool
+    // .app や .bundle など、Finder 上では単一ファイルとして扱われるディレクトリ
+    let isPackage: Bool
 
     // id ベースの比較で SwiftUI の差分計算コストを最小化
     static func == (lhs: FileItem, rhs: FileItem) -> Bool { lhs.url == rhs.url }

@@ -357,6 +357,9 @@ extension FileTableCoordinator: NSMenuDelegate {
         } else {
             let item = items[row]
             addMenuItem(to: menu, title: "開く",       action: #selector(menuOpenItem))
+            if item.isPackage {
+                addMenuItem(to: menu, title: "パッケージの内容を表示", action: #selector(menuShowPackageContents))
+            }
             menu.addItem(.separator())
             addMenuItem(to: menu, title: "名前を変更", action: #selector(menuRenameItem))
             addMenuItem(to: menu, title: "コピー",     action: #selector(menuCopyItem))
@@ -392,6 +395,12 @@ extension FileTableCoordinator: NSMenuDelegate {
         let row = tableView.clickedRow
         guard row >= 0, row < items.count else { return }
         viewModel?.openItem(items[row])
+    }
+
+    @objc private func menuShowPackageContents() {
+        let row = tableView.clickedRow
+        guard row >= 0, row < items.count else { return }
+        viewModel?.showPackageContents(items[row])
     }
 
     @objc private func menuRenameItem() {

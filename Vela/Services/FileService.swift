@@ -12,7 +12,7 @@ final class FileService {
     private init() {}
 
     func contents(of directory: URL, includeHidden: Bool = false) -> [FileItem] {
-        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey, .isDirectoryKey]
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey, .isDirectoryKey, .isPackageKey]
         var options: FileManager.DirectoryEnumerationOptions = []
         if !includeHidden { options.insert(.skipsHiddenFiles) }
 
@@ -27,7 +27,8 @@ final class FileService {
                 url: url,
                 size: Int64(res.fileSize ?? 0),
                 modifiedDate: res.contentModificationDate ?? Date(),
-                isDirectory: res.isDirectory ?? false
+                isDirectory: res.isDirectory ?? false,
+                isPackage: res.isPackage ?? false
             )
         }
         .sorted {
