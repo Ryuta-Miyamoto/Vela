@@ -43,11 +43,7 @@ struct TabBarView: View {
                         .help("新規タブ")
                     }
                 }
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 0.5
-                } action: { _, newValue in
-                    canScrollRight = newValue
-                }
+                .trackCanScrollRight($canScrollRight)
 
                 Group {
                     if canScrollRight {
@@ -68,6 +64,23 @@ struct TabBarView: View {
             .frame(height: 34)
             .background(.bar)
             .overlay(alignment: .bottom) { Divider() }
+        }
+    }
+}
+
+private extension View {
+    // onScrollGeometryChange は macOS 15 以降のみ。macOS 14 ではスクロール位置を取得できないため、
+    // 右スクロールボタンを常に表示する
+    @ViewBuilder
+    func trackCanScrollRight(_ canScrollRight: Binding<Bool>) -> some View {
+        if #available(macOS 15.0, *) {
+            onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 0.5
+            } action: { _, newValue in
+                canScrollRight.wrappedValue = newValue
+            }
+        } else {
+            onAppear { canScrollRight.wrappedValue = true }
         }
     }
 }
