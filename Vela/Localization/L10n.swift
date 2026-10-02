@@ -105,6 +105,7 @@ enum L10n {
     static var rename: String               { tr("Rename", "名前を変更") }
     static var copy: String                 { tr("Copy", "コピー") }
     static var move: String                 { tr("Move", "移動") }
+    static var compressToZip: String        { tr("Compress to ZIP", "ZIPに圧縮") }
     static var addToFavorites: String       { tr("Add to Favorites", "お気に入りに追加") }
     static var properties: String           { tr("Properties", "プロパティ") }
     static var moveToTrash: String          { tr("Move to Trash", "ゴミ箱に入れる") }
@@ -123,6 +124,14 @@ enum L10n {
 
     static func moveToTrashMessage(count: Int) -> String {
         tr("\(count) items will be moved to the Trash.", "\(count)個の項目をゴミ箱に入れます。")
+    }
+
+    // MARK: Rename Dialog
+    static var renameConfirm: String { tr("Rename", "変更") }
+    static var renameFailed: String  { tr("Couldn't Rename the Item", "名前を変更できませんでした") }
+
+    static func renamePrompt(name: String) -> String {
+        tr("Enter a new name for \"\(name)\".", "「\(name)」の新しい名前を入力してください。")
     }
 
     // MARK: Move Panel
