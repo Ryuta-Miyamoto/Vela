@@ -16,9 +16,9 @@ struct SidebarView: View {
 
     var body: some View {
         List {
-            Section("よく使う項目") {
+            Section(L10n.favorites) {
                 ForEach(favoritesStore.items) { item in
-                    Label(item.name, systemImage: item.systemImage)
+                    Label(item.displayName, systemImage: item.systemImage)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                         .padding(.vertical, 2)
@@ -36,7 +36,7 @@ struct SidebarView: View {
                             )
                         ) { providers in handleDrop(providers, to: item.url) }
                         .contextMenu {
-                            Button("削除", role: .destructive) {
+                            Button(L10n.remove, role: .destructive) {
                                 favoritesStore.remove(id: item.id)
                             }
                         }

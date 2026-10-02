@@ -17,11 +17,11 @@ struct StatusBarView: View {
     var body: some View {
         HStack(spacing: 0) {
             if viewModel.selectedItems.isEmpty {
-                Text("\(viewModel.items.count)項目")
+                Text(L10n.itemCount(viewModel.items.count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text("\(viewModel.items.count)項目 | \(viewModel.selectedItems.count)個選択 (\(ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)))")
+                Text("\(L10n.itemCount(viewModel.items.count)) | \(L10n.selectedCount(viewModel.selectedItems.count)) (\(ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

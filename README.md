@@ -42,6 +42,10 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 ### Sort
 - Click column headers (Name / Date Modified / Size) to sort; click again to reverse
 
+### Language
+- Switch the display language from **Vela → Language** in the menu bar (English / 日本語, default: English)
+- Changes apply immediately without restarting; standard macOS menu items (About, Quit, Edit, etc.) stay in English
+
 ## Project Structure
 
 ```
@@ -49,6 +53,8 @@ Vela/
 ├── VelaApp.swift              # App entry point
 ├── ContentView.swift          # Root view / tab & app state management
 ├── QuickLookBridge.swift      # Quick Look integration via NSViewRepresentable
+├── Localization/
+│   └── L10n.swift             # Display language setting & UI strings (English / Japanese)
 ├── Models/
 │   ├── FileItem.swift         # File/directory data model
 │   └── FavoriteItem.swift     # Favorites model & persistence (UserDefaults)
@@ -133,6 +139,10 @@ macOS 向けのシンプルなファイルエクスプローラーアプリで�
 ### ソート
 - 名前 / 更新日 / サイズの各列ヘッダーをクリックしてソート（昇順・降順切り替え）
 
+### 表示言語
+- メニューバーの **Vela → Language** から表示言語を切り替え（English / 日本語、デフォルトは English）
+- 再起動せずに即時反映。macOS 標準のメニュー項目（About・Quit・Edit など）は英語表記のまま
+
 ## ファイル構成
 
 ```
@@ -140,6 +150,8 @@ Vela/
 ├── VelaApp.swift              # アプリのエントリーポイント
 ├── ContentView.swift          # ルートビュー / タブ・アプリ状態管理
 ├── QuickLookBridge.swift      # NSViewRepresentable による Quick Look 連携
+├── Localization/
+│   └── L10n.swift             # 表示言語の設定と UI 文言（英語 / 日本語）
 ├── Models/
 │   ├── FileItem.swift         # ファイル・ディレクトリのデータモデル
 │   └── FavoriteItem.swift     # お気に入りモデルと永続化（UserDefaults）

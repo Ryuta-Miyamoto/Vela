@@ -37,13 +37,14 @@ struct FileListView: View {
                 items: filteredItems,
                 viewModel: viewModel,
                 sortState: sortState,
+                language: LanguageSettings.shared.language,
                 onSortChange: { sortState = $0 },
                 onAddToFavorites: onAddToFavorites
             )
 
             if !viewModel.searchText.isEmpty {
                 HStack {
-                    Text("「\(viewModel.searchText)」: \(filteredItems.count) 件")
+                    Text(L10n.searchResult(query: viewModel.searchText, count: filteredItems.count))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()

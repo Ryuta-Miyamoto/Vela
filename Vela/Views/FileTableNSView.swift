@@ -24,6 +24,8 @@ struct FileTableNSView: NSViewRepresentable {
     let items: [FileItem]
     var viewModel: FileExplorerViewModel
     var sortState: FileSortState
+    // 表示言語の変更時に updateNSView を走らせ、列見出しを差し替えるために受け取る
+    var language: AppLanguage
     var onSortChange: (FileSortState) -> Void
     var onAddToFavorites: ((FileItem) -> Void)?
 
@@ -45,6 +47,7 @@ struct FileTableNSView: NSViewRepresentable {
         c.onAddToFavorites = onAddToFavorites
         c.reloadIfNeeded(newItems: items)
         c.applySortIndicator(sortState)
+        c.applyLanguage(language)
     }
 }
 
@@ -58,6 +61,7 @@ final class FileTableCoordinator: NSObject {
     var onAddToFavorites: ((FileItem) -> Void)?
 
     private var currentSortState = FileSortState(key: "", ascending: true)
+    private var currentLanguage: AppLanguage?
     private var isUpdatingSortIndicator = false
     // show(relativeTo:of:preferredEdge:) はピッカーを保持しないため、表示中は強参照が必要
     private var sharingPicker: NSSharingServicePicker?
@@ -85,13 +89,11 @@ final class FileTableCoordinator: NSObject {
         tableView.rowHeight = 20
 
         let nameCol = NSTableColumn(identifier: nameID)
-        nameCol.title = "名前"
         nameCol.minWidth = 160
         nameCol.sortDescriptorPrototype = NSSortDescriptor(key: "name", ascending: true)
         tableView.addTableColumn(nameCol)
 
         let dateCol = NSTableColumn(identifier: dateID)
-        dateCol.title = "更新日"
         dateCol.width = 180
         dateCol.minWidth = 100
         dateCol.resizingMask = .userResizingMask
@@ -99,7 +101,6 @@ final class FileTableCoordinator: NSObject {
         tableView.addTableColumn(dateCol)
 
         let sizeCol = NSTableColumn(identifier: sizeID)
-        sizeCol.title = "サイズ"
         sizeCol.width = 90
         sizeCol.minWidth = 60
         sizeCol.resizingMask = .userResizingMask
@@ -153,6 +154,17 @@ final class FileTableCoordinator: NSObject {
         }
         tableView.sortDescriptors = [NSSortDescriptor(key: state.key, ascending: state.ascending)]
         tableView.highlightedTableColumn = tableView.tableColumn(withIdentifier: colID)
+    }
+
+    func applyLanguage(_ language: AppLanguage) {
+        guard language != currentLanguage else { return }
+        currentLanguage = language
+        tableView.tableColumn(withIdentifier: nameID)?.title = L10n.columnName
+        tableView.tableColumn(withIdentifier: dateID)?.title = L10n.columnDateModified
+        tableView.tableColumn(withIdentifier: sizeID)?.title = L10n.columnSize
+        // 日付の表記も表示言語に合わせる
+        Self.dateFormatter.locale = language.locale
+        tableView.reloadData()
     }
 
     // MARK: - Key Handlers
@@ -220,13 +232,13 @@ final class FileTableCoordinator: NSObject {
 
     private func showTrashAlert(for targets: [FileItem]) {
         let alert = NSAlert()
-        alert.messageText = "ゴミ箱に入れますか？"
+        alert.messageText = L10n.moveToTrashConfirm
         alert.informativeText = targets.count == 1
-            ? "「\(targets[0].name)」をゴミ箱に入れます。"
-            : "\(targets.count)個の項目をゴミ箱に入れます。"
+            ? L10n.moveToTrashMessage(name: targets[0].name)
+            : L10n.moveToTrashMessage(count: targets.count)
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "ゴミ箱に入れる")
-        alert.addButton(withTitle: "キャンセル")
+        alert.addButton(withTitle: L10n.moveToTrash)
+        alert.addButton(withTitle: L10n.cancel)
         guard let window = tableView.window else { return }
         alert.beginSheetModal(for: window) { [weak self] response in
             if response == .alertFirstButtonReturn {
@@ -355,33 +367,33 @@ extension FileTableCoordinator: NSMenuDelegate {
         let row = tableView.clickedRow
 
         if row < 0 {
-            addMenuItem(to: menu, title: "新規フォルダ作成", action: #selector(menuCreateFolder))
+            addMenuItem(to: menu, title: L10n.newFolder, action: #selector(menuCreateFolder))
         } else {
             let item = items[row]
-            addMenuItem(to: menu, title: "開く",       action: #selector(menuOpenItem))
+            addMenuItem(to: menu, title: L10n.open, action: #selector(menuOpenItem))
             if item.isPackage {
-                addMenuItem(to: menu, title: "パッケージの内容を表示", action: #selector(menuShowPackageContents))
+                addMenuItem(to: menu, title: L10n.showPackageContents, action: #selector(menuShowPackageContents))
             }
             menu.addItem(.separator())
-            addMenuItem(to: menu, title: "共有", action: #selector(menuShareItem))
+            addMenuItem(to: menu, title: L10n.share, action: #selector(menuShareItem))
             menu.addItem(.separator())
-            addMenuItem(to: menu, title: "名前を変更", action: #selector(menuRenameItem))
-            addMenuItem(to: menu, title: "コピー",     action: #selector(menuCopyItem))
-            addMenuItem(to: menu, title: "移動",       action: #selector(menuMoveItem))
+            addMenuItem(to: menu, title: L10n.rename, action: #selector(menuRenameItem))
+            addMenuItem(to: menu, title: L10n.copy, action: #selector(menuCopyItem))
+            addMenuItem(to: menu, title: L10n.move, action: #selector(menuMoveItem))
             if item.isDirectory {
                 menu.addItem(.separator())
-                addMenuItem(to: menu, title: "お気に入りに追加", action: #selector(menuAddToFavorites))
+                addMenuItem(to: menu, title: L10n.addToFavorites, action: #selector(menuAddToFavorites))
             }
             menu.addItem(.separator())
-            addMenuItem(to: menu, title: "プロパティ", action: #selector(menuPropertiesItem))
+            addMenuItem(to: menu, title: L10n.properties, action: #selector(menuPropertiesItem))
             menu.addItem(.separator())
 
             let trashTitle: String
             let selectedCount = tableView.selectedRowIndexes.count
             if tableView.selectedRowIndexes.contains(row) && selectedCount > 1 {
-                trashTitle = "\(selectedCount)個をゴミ箱に入れる"
+                trashTitle = L10n.moveItemsToTrash(selectedCount)
             } else {
-                trashTitle = "ゴミ箱に入れる"
+                trashTitle = L10n.moveToTrash
             }
             addMenuItem(to: menu, title: trashTitle, action: #selector(menuTrashItem))
         }

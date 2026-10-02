@@ -96,7 +96,7 @@ final class FileExplorerViewModel {
         var error: NSDictionary?
         NSAppleScript(source: script)?.executeAndReturnError(&error)
         if let error {
-            NSLog("Finder情報ウインドウを開けませんでした: \(error)")
+            NSLog("Failed to open Finder info window: \(error)")
         }
     }
 
@@ -118,8 +118,8 @@ final class FileExplorerViewModel {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
-        panel.prompt = "ここに移動"
-        panel.message = "「\(item.name)」の移動先フォルダを選択"
+        panel.prompt = L10n.moveHere
+        panel.message = L10n.chooseMoveDestination(name: item.name)
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         try? FileManager.default.moveItem(at: item.url, to: dest.appendingPathComponent(item.name))
         reload()
@@ -131,11 +131,12 @@ final class FileExplorerViewModel {
     }
 
     func createFolder() {
-        var name = "新規フォルダ"
+        let baseName = L10n.newFolder
+        var name = baseName
         var counter = 2
         var newURL = currentURL.appendingPathComponent(name)
         while FileManager.default.fileExists(atPath: newURL.path) {
-            name = "新規フォルダ \(counter)"
+            name = "\(baseName) \(counter)"
             newURL = currentURL.appendingPathComponent(name)
             counter += 1
         }

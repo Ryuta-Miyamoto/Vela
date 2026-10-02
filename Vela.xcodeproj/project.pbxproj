@@ -85,7 +85,7 @@
 					};
 				};
 			};
-			buildConfigurationList = C16334952F9656A9005A4174 /* Build configuration list for PBXProject "SwiftExplorer" */;
+			buildConfigurationList = C16334952F9656A9005A4174 /* Build configuration list for PBXProject "Vela" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -255,7 +255,7 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "ファイルの「プロパティ」からFinderの情報ウインドウを開くために使用します。";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Used to open the Finder info window from a file’s Properties menu item.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -286,7 +286,7 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "ファイルの「プロパティ」からFinderの情報ウインドウを開くために使用します。";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Used to open the Finder info window from a file’s Properties menu item.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -308,7 +308,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		C16334952F9656A9005A4174 /* Build configuration list for PBXProject "SwiftExplorer" */ = {
+		C16334952F9656A9005A4174 /* Build configuration list for PBXProject "Vela" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				C16334A32F9656AB005A4174 /* Debug */,

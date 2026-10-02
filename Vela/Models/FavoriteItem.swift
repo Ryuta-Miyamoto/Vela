@@ -13,8 +13,57 @@ struct FavoriteItem: Identifiable, Codable {
     var name: String
     var path: String
     var systemImage: String
+    // 初期登録の項目のみ持つ。表示名を表示言語に合わせて切り替えるために使う
+    var defaultKey: DefaultFavorite?
 
     var url: URL { URL(fileURLWithPath: path) }
+    var displayName: String { defaultKey?.localizedName ?? name }
+}
+
+enum DefaultFavorite: String, Codable, CaseIterable {
+    case home, desktop, documents, downloads, applications
+
+    var localizedName: String {
+        switch self {
+        case .home:         return L10n.favoriteHome
+        case .desktop:      return L10n.favoriteDesktop
+        case .documents:    return L10n.favoriteDocuments
+        case .downloads:    return L10n.favoriteDownloads
+        case .applications: return L10n.favoriteApplications
+        }
+    }
+
+    // 言語切り替え導入前に日本語名で保存された初期項目を判別するための旧名称
+    fileprivate var legacyJapaneseName: String {
+        switch self {
+        case .home:         return "ホーム"
+        case .desktop:      return "デスクトップ"
+        case .documents:    return "書類"
+        case .downloads:    return "ダウンロード"
+        case .applications: return "アプリケーション"
+        }
+    }
+
+    var url: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        switch self {
+        case .home:         return home
+        case .desktop:      return home.appendingPathComponent("Desktop")
+        case .documents:    return home.appendingPathComponent("Documents")
+        case .downloads:    return home.appendingPathComponent("Downloads")
+        case .applications: return URL(fileURLWithPath: "/Applications")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .home:         return "house.fill"
+        case .desktop:      return "desktopcomputer"
+        case .documents:    return "doc.fill"
+        case .downloads:    return "arrow.down.circle.fill"
+        case .applications: return "square.grid.2x2.fill"
+        }
+    }
 }
 
 @Observable
@@ -44,14 +93,9 @@ final class FavoritesStore {
     }
 
     private func seedDefaults() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        items = [
-            FavoriteItem(id: UUID(), name: "ホーム",          path: home.path,                                     systemImage: "house.fill"),
-            FavoriteItem(id: UUID(), name: "デスクトップ",     path: home.appendingPathComponent("Desktop").path,   systemImage: "desktopcomputer"),
-            FavoriteItem(id: UUID(), name: "書類",             path: home.appendingPathComponent("Documents").path, systemImage: "doc.fill"),
-            FavoriteItem(id: UUID(), name: "ダウンロード",     path: home.appendingPathComponent("Downloads").path, systemImage: "arrow.down.circle.fill"),
-            FavoriteItem(id: UUID(), name: "アプリケーション", path: "/Applications",                               systemImage: "square.grid.2x2.fill"),
-        ]
+        items = DefaultFavorite.allCases.map {
+            FavoriteItem(id: UUID(), name: $0.localizedName, path: $0.url.path, systemImage: $0.systemImage, defaultKey: $0)
+        }
         save()
     }
 
@@ -64,5 +108,18 @@ final class FavoritesStore {
         guard let data = UserDefaults.standard.data(forKey: Self.udKey),
               let decoded = try? JSONDecoder().decode([FavoriteItem].self, from: data) else { return }
         items = decoded
+        migrateLegacyDefaults()
+    }
+
+    private func migrateLegacyDefaults() {
+        var migrated = false
+        for index in items.indices where items[index].defaultKey == nil {
+            guard let key = DefaultFavorite.allCases.first(where: {
+                $0.legacyJapaneseName == items[index].name && $0.url.path == items[index].path
+            }) else { continue }
+            items[index].defaultKey = key
+            migrated = true
+        }
+        if migrated { save() }
     }
 }
