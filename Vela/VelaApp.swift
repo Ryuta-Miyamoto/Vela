@@ -20,23 +20,23 @@ struct VelaApp: App {
 }
 
 // ファイルメニューのタブ操作。⌘T / ⌘W をメニュー経由で確実にタブ操作へ割り当てる。
-// 標準の「新規ウインドウ(⌘N)」はそのまま残し、⌘W と重なる標準の「閉じる」は ⇧⌘W に移す
+// 標準の「New Window (⌘N)」はそのまま残し、⌘W と重なる標準の「Close」は「Close Window (⇧⌘W)」に移す
 private struct TabCommands: Commands {
     @FocusedValue(\.appState) private var appState
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("新規タブ") { appState?.addTab() }
+            Button("New Tab") { appState?.addTab() }
                 .keyboardShortcut("t", modifiers: .command)
                 .disabled(appState == nil)
         }
         CommandGroup(replacing: .saveItem) {
-            Button("ウインドウを閉じる") {
+            Button("Close Window") {
                 (NSApp.keyWindow ?? NSApp.mainWindow)?.performClose(nil)
             }
             .keyboardShortcut("w", modifiers: [.command, .shift])
 
-            Button("タブを閉じる") {
+            Button("Close Tab") {
                 guard let appState else { return }
                 appState.closeTab(at: appState.selectedIndex)
             }
