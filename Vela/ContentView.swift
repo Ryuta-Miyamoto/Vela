@@ -216,16 +216,8 @@ struct ContentView: View {
         }
         .frame(minWidth: 800, minHeight: 520)
         .navigationTitle(appState.currentTab.tabTitle)
-        .overlay {
-            Group {
-                Button("") { appState.addTab() }
-                    .keyboardShortcut("t", modifiers: .command)
-                Button("") { appState.closeTab(at: appState.selectedIndex) }
-                    .keyboardShortcut("w", modifiers: .command)
-            }
-            .opacity(0)
-            .allowsHitTesting(false)
-        }
+        // ⌘T / ⌘W のメニューコマンド（VelaApp の TabCommands）から参照する
+        .focusedSceneValue(\.appState, appState)
     }
 }
 
