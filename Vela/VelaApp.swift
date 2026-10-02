@@ -15,6 +15,7 @@ struct VelaApp: App {
         }
         .commands {
             TabCommands()
+            LanguageCommands()
         }
     }
 }
@@ -26,22 +27,38 @@ private struct TabCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("New Tab") { appState?.addTab() }
+            Button(L10n.newTab) { appState?.addTab() }
                 .keyboardShortcut("t", modifiers: .command)
                 .disabled(appState == nil)
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Close Window") {
+            Button(L10n.closeWindow) {
                 (NSApp.keyWindow ?? NSApp.mainWindow)?.performClose(nil)
             }
             .keyboardShortcut("w", modifiers: [.command, .shift])
 
-            Button("Close Tab") {
+            Button(L10n.closeTab) {
                 guard let appState else { return }
                 appState.closeTab(at: appState.selectedIndex)
             }
             .keyboardShortcut("w", modifiers: .command)
             .disabled(appState == nil)
+        }
+    }
+}
+
+// アプリメニュー（Vela）の設定項目の位置に表示言語の切り替えを置く。
+// 標準メニュー（About / Quit / Edit など）は macOS 側の表記のまま
+private struct LanguageCommands: Commands {
+    @Bindable private var settings = LanguageSettings.shared
+
+    var body: some Commands {
+        CommandGroup(after: .appSettings) {
+            Picker(L10n.language, selection: $settings.language) {
+                ForEach(AppLanguage.allCases) { language in
+                    Text(language.displayName).tag(language)
+                }
+            }
         }
     }
 }

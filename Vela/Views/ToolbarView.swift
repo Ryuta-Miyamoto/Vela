@@ -55,7 +55,7 @@ struct ToolbarView: View {
             Button { viewModel.toggleHiddenFiles() } label: {
                 Image(systemName: viewModel.showHiddenFiles ? "eye" : "eye.slash")
             }
-            .help(viewModel.showHiddenFiles ? "隠しファイルを非表示" : "隠しファイルを表示")
+            .help(viewModel.showHiddenFiles ? L10n.hideHiddenFiles : L10n.showHiddenFiles)
             .keyboardShortcut(".", modifiers: [.command, .shift])
         }
         .padding(.horizontal, 12)
@@ -75,7 +75,7 @@ struct ToolbarView: View {
     @ViewBuilder
     private var addressBar: some View {
         if isEditing {
-            TextField("パスを入力", text: $editingPath)
+            TextField(L10n.enterPath, text: $editingPath)
                 .textFieldStyle(.plain)
                 .onSubmit { commitEdit() }
                 .onExitCommand { isEditing = false }
@@ -114,7 +114,7 @@ struct ToolbarView: View {
                 .foregroundStyle(.secondary)
                 .font(.caption)
 
-            TextField("検索", text: $viewModel.searchText)
+            TextField(L10n.search, text: $viewModel.searchText)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .onKeyPress(.escape) {

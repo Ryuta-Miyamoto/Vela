@@ -22,7 +22,7 @@ struct TabBarView: View {
     var body: some View {
         ScrollViewReader { proxy in
             HStack(spacing: 0) {
-                scrollButton(systemName: "chevron.left", help: "左のタブを表示", isVisible: canScrollLeft) {
+                scrollButton(systemName: "chevron.left", help: L10n.scrollTabsLeftHelp, isVisible: canScrollLeft) {
                     guard let firstID = appState.tabs.first?.id else { return }
                     withAnimation { proxy.scrollTo(firstID, anchor: .leading) }
                 }
@@ -47,12 +47,12 @@ struct TabBarView: View {
                                 .frame(width: 28, height: 33)
                         }
                         .buttonStyle(.plain)
-                        .help("新規タブ (⌘T)")
+                        .help(L10n.newTabHelp)
                     }
                 }
                 .trackScrollability(canScrollLeft: $canScrollLeft, canScrollRight: $canScrollRight)
 
-                scrollButton(systemName: "chevron.right", help: "右のタブを表示", isVisible: canScrollRight) {
+                scrollButton(systemName: "chevron.right", help: L10n.scrollTabsRightHelp, isVisible: canScrollRight) {
                     guard let lastID = appState.tabs.last?.id else { return }
                     withAnimation { proxy.scrollTo(lastID, anchor: .trailing) }
                 }
@@ -220,7 +220,7 @@ private struct TabItemView: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .help("タブを閉じる (⌘W)")
+            .help(L10n.closeTabHelp)
         }
         .padding(.horizontal, 10)
         .frame(height: 33)

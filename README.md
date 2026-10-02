@@ -10,17 +10,22 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 ## Features
 
 ### Navigation
-- **Tabs** — Open multiple directories at once (`Cmd+T` for a new tab, `Cmd+W` to close)
+- **Tabs** — Open multiple directories at once (`Cmd+T` for a new tab, `Cmd+W` to close a tab, `Cmd+Shift+W` to close the window). Arrow buttons appear when tabs overflow the tab bar
 - **Address Bar** — Click breadcrumbs to jump to any parent directory, or click to type a path directly
 - **Back / Forward / Up** — Toolbar buttons or keyboard (`Cmd+↑` to go up, `Cmd+↓` to open)
 - **Toggle Hidden Files** — Toolbar icon or `Cmd+Shift+.`
 
 ### File Operations
-- **Open** — Double-click or `Return` (files open with their default app)
-- **Rename** — Select a file and press `Return`, or use the context menu
+- **Open** — Double-click or `Cmd+↓` (files open with their default app; `.app` packages launch)
+- **Show Package Contents** — Right-click an app or package to browse its contents
+- **Rename** — Select an item and press `Return`, or use the context menu, then enter the new name in the dialog
 - **New Folder** — `Cmd+Shift+N` or right-click on an empty area
-- **Copy** — `Cmd+C` copies the path to the clipboard
+- **Copy** — Context menu "Copy" copies the file; `Cmd+C` copies the path as text
+- **Paste** — `Cmd+V` copies files on the clipboard into the current folder
 - **Move** — Choose a destination folder via the context menu
+- **Compress to ZIP** — Context menu creates `<name>.zip` next to the item (same format as Finder's Compress)
+- **Share** — Context menu opens the macOS share menu
+- **Properties** — Context menu opens Finder's Get Info window (macOS asks for Automation permission on first use)
 - **Trash** — `Delete` key or context menu (with confirmation dialog)
 
 ### Drag & Drop
@@ -42,6 +47,10 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 ### Sort
 - Click column headers (Name / Date Modified / Size) to sort; click again to reverse
 
+### Language
+- Switch the display language from **Vela → Language** in the menu bar (English / 日本語, default: English)
+- Changes apply immediately without restarting; standard macOS menu items (About, Quit, Edit, etc.) stay in English
+
 ## Project Structure
 
 ```
@@ -49,6 +58,8 @@ Vela/
 ├── VelaApp.swift              # App entry point
 ├── ContentView.swift          # Root view / tab & app state management
 ├── QuickLookBridge.swift      # Quick Look integration via NSViewRepresentable
+├── Localization/
+│   └── L10n.swift             # Display language setting & UI strings (English / Japanese)
 ├── Models/
 │   ├── FileItem.swift         # File/directory data model
 │   └── FavoriteItem.swift     # Favorites model & persistence (UserDefaults)
@@ -101,17 +112,22 @@ macOS 向けのシンプルなファイルエクスプローラーアプリで�
 ## 機能
 
 ### ナビゲーション
-- **タブ** — 複数のディレクトリを同時に開ける（`Cmd+T` で新規タブ、`Cmd+W` で閉じる）
+- **タブ** — 複数のディレクトリを同時に開ける（`Cmd+T` で新規タブ、`Cmd+W` でタブを閉じる、`Cmd+Shift+W` でウインドウを閉じる）。タブがあふれると左右のスクロールボタンを表示
 - **アドレスバー** — パンくずリストをクリックして任意の親ディレクトリへ移動。クリックで直接パスを入力することも可能
 - **戻る / 進む / 上へ** — ツールバーのボタン、またはキーボード（`Cmd+↑` で親ディレクトリ、`Cmd+↓` で開く）
 - **隠しファイルの表示切替** — ツールバーのアイコン、または `Cmd+Shift+.`
 
 ### ファイル操作
-- **開く** — ダブルクリック、または `Return` キー（ファイルはデフォルトアプリで開く）
-- **名前変更** — ファイルを選択して `Return` キー、またはコンテキストメニュー
+- **開く** — ダブルクリック、または `Cmd+↓`（ファイルはデフォルトアプリで開き、`.app` などのパッケージは起動）
+- **パッケージの内容を表示** — アプリやパッケージを右クリックして中身を表示
+- **名前変更** — 項目を選択して `Return` キー、またはコンテキストメニューから、ダイアログに新しい名前を入力
 - **新規フォルダ作成** — `Cmd+Shift+N`、またはコンテキストメニュー（空白部分を右クリック）
-- **コピー** — `Cmd+C` でパスをクリップボードにコピー
+- **コピー** — コンテキストメニューの「コピー」でファイルをコピー。`Cmd+C` はパスをテキストとしてコピー
+- **ペースト** — `Cmd+V` でクリップボードのファイルを現在のフォルダにコピー
 - **移動** — コンテキストメニューの「移動」から移動先フォルダを選択
+- **ZIPに圧縮** — コンテキストメニューから、項目と同じ場所に `<名前>.zip` を作成（Finder の「圧縮」と同じ形式）
+- **共有** — コンテキストメニューから macOS の共有メニューを表示
+- **プロパティ** — コンテキストメニューから Finder の「情報を見る」ウインドウを表示（初回は macOS がオートメーションの許可を求めます）
 - **ゴミ箱** — `Delete` キー、またはコンテキストメニュー（確認ダイアログあり）
 
 ### ドラッグ＆ドロップ
@@ -133,6 +149,10 @@ macOS 向けのシンプルなファイルエクスプローラーアプリで�
 ### ソート
 - 名前 / 更新日 / サイズの各列ヘッダーをクリックしてソート（昇順・降順切り替え）
 
+### 表示言語
+- メニューバーの **Vela → Language** から表示言語を切り替え（English / 日本語、デフォルトは English）
+- 再起動せずに即時反映。macOS 標準のメニュー項目（About・Quit・Edit など）は英語表記のまま
+
 ## ファイル構成
 
 ```
@@ -140,6 +160,8 @@ Vela/
 ├── VelaApp.swift              # アプリのエントリーポイント
 ├── ContentView.swift          # ルートビュー / タブ・アプリ状態管理
 ├── QuickLookBridge.swift      # NSViewRepresentable による Quick Look 連携
+├── Localization/
+│   └── L10n.swift             # 表示言語の設定と UI 文言（英語 / 日本語）
 ├── Models/
 │   ├── FileItem.swift         # ファイル・ディレクトリのデータモデル
 │   └── FavoriteItem.swift     # お気に入りモデルと永続化（UserDefaults）

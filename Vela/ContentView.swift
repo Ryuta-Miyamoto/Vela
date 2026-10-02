@@ -96,7 +96,7 @@ final class FileExplorerViewModel {
         var error: NSDictionary?
         NSAppleScript(source: script)?.executeAndReturnError(&error)
         if let error {
-            NSLog("Finder情報ウインドウを開けませんでした: \(error)")
+            NSLog("Failed to open Finder info window: \(error)")
         }
     }
 
@@ -119,7 +119,7 @@ final class FileExplorerViewModel {
         process.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
                 if proc.terminationStatus != 0 {
-                    NSLog("ZIP圧縮に失敗しました（終了コード: \(proc.terminationStatus)）")
+                    NSLog("ZIP compression failed (exit code: \(proc.terminationStatus))")
                 }
                 self?.reload()
             }
@@ -127,7 +127,7 @@ final class FileExplorerViewModel {
         do {
             try process.run()
         } catch {
-            NSLog("ZIP圧縮の起動に失敗しました: \(error)")
+            NSLog("Failed to start ZIP compression: \(error)")
         }
     }
 
@@ -139,7 +139,7 @@ final class FileExplorerViewModel {
             try FileManager.default.moveItem(at: item.url, to: dest)
         } catch {
             let alert = NSAlert()
-            alert.messageText = "名前を変更できませんでした"
+            alert.messageText = L10n.renameFailed
             alert.informativeText = error.localizedDescription
             alert.alertStyle = .warning
             alert.runModal()
@@ -157,8 +157,8 @@ final class FileExplorerViewModel {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
-        panel.prompt = "ここに移動"
-        panel.message = "「\(item.name)」の移動先フォルダを選択"
+        panel.prompt = L10n.moveHere
+        panel.message = L10n.chooseMoveDestination(name: item.name)
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         try? FileManager.default.moveItem(at: item.url, to: dest.appendingPathComponent(item.name))
         reload()
@@ -170,11 +170,12 @@ final class FileExplorerViewModel {
     }
 
     func createFolder() {
-        var name = "新規フォルダ"
+        let baseName = L10n.newFolder
+        var name = baseName
         var counter = 2
         var newURL = currentURL.appendingPathComponent(name)
         while FileManager.default.fileExists(atPath: newURL.path) {
-            name = "新規フォルダ \(counter)"
+            name = "\(baseName) \(counter)"
             newURL = currentURL.appendingPathComponent(name)
             counter += 1
         }
