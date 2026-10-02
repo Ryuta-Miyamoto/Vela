@@ -174,16 +174,10 @@ final class FileTableCoordinator: NSObject {
     }
 
     private func handleReturnKey() {
+        // Finder と同様、Return は常に名前変更（フォルダを開くのはダブルクリック／Cmd+↓）
         let row = tableView.selectedRow
         guard row >= 0, row < items.count else { return }
-        let item = items[row]
-        if item.isDirectory {
-            viewModel?.openItem(item)
-        } else {
-            let col = tableView.column(withIdentifier: nameID)
-            guard let cell = tableView.view(atColumn: col, row: row, makeIfNecessary: false) as? FileNameCellView else { return }
-            cell.beginEditing()
-        }
+        promptRename(for: items[row])
     }
 
     private func handleDeleteKey() {
@@ -313,9 +307,7 @@ extension FileTableCoordinator: NSTableViewDelegate {
             let cell = (tableView.makeView(withIdentifier: nameID, owner: nil) as? FileNameCellView)
                        ?? FileNameCellView()
             cell.identifier = nameID
-            cell.configure(with: item) { [weak self] newName in
-                self?.viewModel?.renameItem(item, to: newName)
-            }
+            cell.configure(with: item)
             return cell
 
         case dateID:
@@ -368,6 +360,7 @@ extension FileTableCoordinator: NSMenuDelegate {
             addMenuItem(to: menu, title: "名前を変更", action: #selector(menuRenameItem))
             addMenuItem(to: menu, title: "コピー",     action: #selector(menuCopyItem))
             addMenuItem(to: menu, title: "移動",       action: #selector(menuMoveItem))
+            addMenuItem(to: menu, title: "ZIPに圧縮",  action: #selector(menuCompressItem))
             if item.isDirectory {
                 menu.addItem(.separator())
                 addMenuItem(to: menu, title: "お気に入りに追加", action: #selector(menuAddToFavorites))
@@ -412,10 +405,30 @@ extension FileTableCoordinator: NSMenuDelegate {
     @objc private func menuRenameItem() {
         let row = tableView.clickedRow
         guard row >= 0, row < items.count else { return }
-        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-        let col = tableView.column(withIdentifier: nameID)
-        guard let cell = tableView.view(atColumn: col, row: row, makeIfNecessary: false) as? FileNameCellView else { return }
-        cell.beginEditing()
+        promptRename(for: items[row])
+    }
+
+    // 選択中の行のテキストフィールドは NSTableCellView の選択ハイライトに紛れて編集中か見分けが
+    // つかないため、インライン編集ではなくダイアログで新しい名前を入力してもらう
+    private func promptRename(for item: FileItem) {
+        let alert = NSAlert()
+        alert.messageText = "名前を変更"
+        alert.informativeText = "「\(item.name)」の新しい名前を入力してください。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "変更")
+        alert.addButton(withTitle: "キャンセル")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        textField.stringValue = item.name
+        alert.accessoryView = textField
+        alert.window.initialFirstResponder = textField
+
+        guard let window = tableView.window else { return }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.viewModel?.renameItem(item, to: textField.stringValue)
+        }
+        DispatchQueue.main.async { textField.selectText(nil) }
     }
 
     @objc private func menuCopyItem() {
@@ -428,6 +441,12 @@ extension FileTableCoordinator: NSMenuDelegate {
         let row = tableView.clickedRow
         guard row >= 0, row < items.count else { return }
         viewModel?.moveItem(items[row])
+    }
+
+    @objc private func menuCompressItem() {
+        let row = tableView.clickedRow
+        guard row >= 0, row < items.count else { return }
+        viewModel?.compressToZip(items[row])
     }
 
     @objc private func menuAddToFavorites() {
@@ -533,11 +552,9 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
 
 // MARK: - FileNameCellView
 
-final class FileNameCellView: NSTableCellView, NSTextFieldDelegate {
+final class FileNameCellView: NSTableCellView {
     private let icon = NSImageView()
     private let nameField = NSTextField()
-    private var onCommit: ((String) -> Void)?
-    private var originalName = ""
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -555,7 +572,6 @@ final class FileNameCellView: NSTableCellView, NSTextFieldDelegate {
         nameField.isSelectable = false
         nameField.lineBreakMode = .byTruncatingMiddle
         nameField.translatesAutoresizingMaskIntoConstraints = false
-        nameField.delegate = self
 
         addSubview(icon)
         addSubview(nameField)
@@ -573,46 +589,11 @@ final class FileNameCellView: NSTableCellView, NSTextFieldDelegate {
         ])
     }
 
-    func configure(with item: FileItem, onCommit: @escaping (String) -> Void) {
-        originalName = item.name
-        self.onCommit = onCommit
+    func configure(with item: FileItem) {
         nameField.stringValue = item.name
         let img = NSWorkspace.shared.icon(forFile: item.url.path)
         img.size = NSSize(width: 16, height: 16)
         icon.image = img
-    }
-
-    func beginEditing() {
-        nameField.isEditable = true
-        nameField.isBezeled = true
-        nameField.drawsBackground = true
-        window?.makeFirstResponder(nameField)
-        nameField.selectText(nil)
-    }
-
-    func controlTextDidEndEditing(_ obj: Notification) {
-        nameField.isEditable = false
-        nameField.isBezeled = false
-        nameField.drawsBackground = false
-        let newName = nameField.stringValue.trimmingCharacters(in: .whitespaces)
-        if !newName.isEmpty, newName != originalName {
-            onCommit?(newName)
-        } else {
-            nameField.stringValue = originalName
-        }
-    }
-
-    func control(_ control: NSControl, textView: NSTextView,
-                 doCommandBy selector: Selector) -> Bool {
-        if selector == #selector(cancelOperation(_:)) {
-            nameField.stringValue = originalName
-            nameField.abortEditing()
-            nameField.isEditable = false
-            nameField.isBezeled = false
-            nameField.drawsBackground = false
-            return true
-        }
-        return false
     }
 }
 

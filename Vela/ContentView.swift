@@ -100,11 +100,50 @@ final class FileExplorerViewModel {
         }
     }
 
+    // 右クリック「ZIPに圧縮」用：Finderの「圧縮」と同じくditto(-c -k)でzipを作成する。
+    // zip/unzipコマンドよりHFS+のメタデータ（リソースフォーク等）を正しく保持できる。
+    func compressToZip(_ item: FileItem) {
+        let parentDir = item.url.deletingLastPathComponent()
+        let baseName = item.url.lastPathComponent
+        var destURL = parentDir.appendingPathComponent("\(baseName).zip")
+        var counter = 2
+        while FileManager.default.fileExists(atPath: destURL.path) {
+            destURL = parentDir.appendingPathComponent("\(baseName) \(counter).zip")
+            counter += 1
+        }
+
+        let process = Process()
+        process.currentDirectoryURL = parentDir
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-c", "-k", "--sequesterRsrc", "--keepParent", baseName, destURL.path]
+        process.terminationHandler = { [weak self] proc in
+            DispatchQueue.main.async {
+                if proc.terminationStatus != 0 {
+                    NSLog("ZIP圧縮に失敗しました（終了コード: \(proc.terminationStatus)）")
+                }
+                self?.reload()
+            }
+        }
+        do {
+            try process.run()
+        } catch {
+            NSLog("ZIP圧縮の起動に失敗しました: \(error)")
+        }
+    }
+
     func renameItem(_ item: FileItem, to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, trimmed != item.name else { return }
         let dest = item.url.deletingLastPathComponent().appendingPathComponent(trimmed)
-        try? FileManager.default.moveItem(at: item.url, to: dest)
+        do {
+            try FileManager.default.moveItem(at: item.url, to: dest)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "名前を変更できませんでした"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
         reload()
     }
 

@@ -61,10 +61,15 @@ struct ToolbarView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(.bar)
-        .onChange(of: viewModel.id) { _, _ in
-            isEditing = false
-            editingPath = ""
-        }
+        .onChange(of: viewModel.id) { _, _ in resetEditing() }
+        // タブ切り替えだけでなく、ファイル一覧のダブルクリックや戻る/進むなど
+        // 編集モード以外の経路でパスが変わった時も編集モードを抜ける
+        .onChange(of: viewModel.currentURL) { _, _ in resetEditing() }
+    }
+
+    private func resetEditing() {
+        isEditing = false
+        editingPath = ""
     }
 
     @ViewBuilder
