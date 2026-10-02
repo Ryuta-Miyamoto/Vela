@@ -156,7 +156,11 @@ final class AppState {
     }
 
     func closeTab(at index: Int) {
-        guard tabs.count > 1 else { return }
+        // 残り1タブを閉じるのはウインドウを閉じる操作に相当するため、アプリを終了する
+        guard tabs.count > 1 else {
+            NSApplication.shared.terminate(nil)
+            return
+        }
         tabs.remove(at: index)
         if selectedIndex > index {
             selectedIndex -= 1

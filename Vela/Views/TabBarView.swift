@@ -10,32 +10,71 @@ import SwiftUI
 struct TabBarView: View {
     var appState: AppState
 
+    // ScrollView のスクロール位置的に、まだ右へスクロールできる余地があるか
+    @State private var canScrollRight = false
+
+    // 右端の矢印ボタン用に常に確保しておく幅（表示/非表示に関わらず一定にすることで、
+    // ScrollView の表示領域幅が変動してちらつくのを防ぐ）
+    private let scrollButtonWidth: CGFloat = 28
+
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollViewReader { proxy in
             HStack(spacing: 0) {
-                ForEach(Array(appState.tabs.enumerated()), id: \.element.id) { index, tab in
-                    TabItemView(
-                        title: tab.tabTitle,
-                        isSelected: appState.selectedIndex == index,
-                        canClose: appState.tabs.count > 1,
-                        onSelect: { appState.selectedIndex = index },
-                        onClose: { appState.closeTab(at: index) }
-                    )
-                    Divider().frame(height: 20)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        ForEach(Array(appState.tabs.enumerated()), id: \.element.id) { index, tab in
+                            TabItemView(
+                                title: tab.tabTitle,
+                                isSelected: appState.selectedIndex == index,
+                                onSelect: { appState.selectedIndex = index },
+                                onClose: { appState.closeTab(at: index) }
+                            )
+                            .id(tab.id)
+                            Divider().frame(height: 20)
+                        }
+
+                        Button(action: { appState.addTab() }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, height: 33)
+                        }
+                        .buttonStyle(.plain)
+                        .help("新規タブ")
+                    }
                 }
-                Spacer(minLength: 0)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 0.5
+                } action: { _, newValue in
+                    canScrollRight = newValue
+                }
+
+                Group {
+                    if canScrollRight {
+                        Button(action: {
+                            guard let lastID = appState.tabs.last?.id else { return }
+                            withAnimation { proxy.scrollTo(lastID, anchor: .trailing) }
+                        }) {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("右のタブを表示")
+                    }
+                }
+                .frame(width: scrollButtonWidth, height: 33)
             }
+            .frame(height: 34)
+            .background(.bar)
+            .overlay(alignment: .bottom) { Divider() }
         }
-        .frame(height: 34)
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
 private struct TabItemView: View {
     let title: String
     let isSelected: Bool
-    let canClose: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
 
@@ -60,7 +99,6 @@ private struct TabItemView: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .opacity((canClose && isHovered) || (canClose && isSelected) ? 1 : 0)
         }
         .padding(.horizontal, 10)
         .frame(height: 33)
