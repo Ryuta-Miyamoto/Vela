@@ -87,6 +87,24 @@ enum L10n {
     static var favorites: String { tr("Favorites", "よく使う項目") }
     static var remove: String    { tr("Remove", "削除") }
 
+    static var newGroup: String          { tr("New Group…", "新規グループ…") }
+    static var newGroupName: String      { tr("New Group", "新規グループ") }
+    static var renameGroup: String       { tr("Rename Group…", "グループ名を変更…") }
+    static var deleteGroup: String       { tr("Delete Group", "グループを削除") }
+    static var restoreDefaultFavorites: String { tr("Restore Default Items", "初期項目を復元") }
+    static var groupNamePrompt: String   { tr("Enter a name for the group.", "グループの名前を入力してください。") }
+    static var create: String            { tr("Create", "作成") }
+    static var delete: String            { tr("Delete", "削除") }
+
+    static func deleteGroupConfirm(name: String) -> String {
+        tr("Delete the group \"\(name)\"?", "グループ「\(name)」を削除しますか？")
+    }
+
+    static func deleteGroupMessage(count: Int) -> String {
+        tr("\(count) \(count == 1 ? "favorite" : "favorites") in this group will also be removed. The folders themselves won't be deleted.",
+           "このグループの\(count)個のお気に入りも削除されます。フォルダ自体は削除されません。")
+    }
+
     static var favoriteHome: String         { tr("Home", "ホーム") }
     static var favoriteDesktop: String      { tr("Desktop", "デスクトップ") }
     static var favoriteDocuments: String    { tr("Documents", "書類") }

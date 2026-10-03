@@ -390,8 +390,9 @@ struct ContentView: View {
             } detail: {
                 FileListView(
                     viewModel: appState.currentTab,
-                    onAddToFavorites: { item in
-                        favoritesStore.add(name: item.name, url: item.url)
+                    favoriteGroups: { favoritesStore.groups },
+                    onAddToFavorites: { item, groupID in
+                        favoritesStore.add(name: item.name, url: item.url, toGroup: groupID)
                     },
                     onOpenInNewTab: { appState.openInNewTab($0) }
                 )

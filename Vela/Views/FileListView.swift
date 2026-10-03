@@ -9,7 +9,8 @@ import SwiftUI
 
 struct FileListView: View {
     var viewModel: FileExplorerViewModel
-    var onAddToFavorites: ((FileItem) -> Void)?
+    var favoriteGroups: (() -> [FavoriteGroup])?
+    var onAddToFavorites: ((FileItem, UUID) -> Void)?
     var onOpenInNewTab: ((URL) -> Void)?
 
     @State private var sortState = FileSortState.default
@@ -44,6 +45,7 @@ struct FileListView: View {
                 sortState: sortState,
                 language: LanguageSettings.shared.language,
                 onSortChange: { sortState = $0 },
+                favoriteGroups: favoriteGroups,
                 onAddToFavorites: onAddToFavorites,
                 onOpenInNewTab: onOpenInNewTab
             )
