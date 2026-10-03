@@ -16,6 +16,9 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 - **Address Bar** — Click breadcrumbs to jump to any parent directory, or click to type a path directly (`Cmd+C` / `Cmd+V` work while editing)
 - **Back / Forward / Up** — Toolbar buttons or keyboard (`Cmd+↑` to go up, `Cmd+↓` to open)
 - **Toggle Hidden Files** — Toolbar icon or `Cmd+Shift+.`
+- **Type to Select** — Type the first letters of a name in the file list to jump to that item
+- **Restore Tabs** — The tabs open when you quit (and the selected tab) reopen on the next launch
+- **Auto Refresh** — The file list updates automatically when files are added, removed, renamed or modified by other apps
 
 ### File Operations
 - **Open** — Double-click or `Cmd+↓` (files open with their default app; `.app` packages launch)
@@ -29,6 +32,7 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 - **Share** — Context menu opens the macOS share menu
 - **Properties** — Context menu opens Finder's Get Info window (macOS asks for Automation permission on first use)
 - **Trash** — `Delete` key or context menu (with confirmation dialog)
+- **Undo / Redo** — `Cmd+Z` / `Cmd+Shift+Z` while the file list is focused undo and redo rename, move, copy, paste, new folder, Compress to ZIP and Trash (undone copies and new items go to the Trash)
 
 ### Drag & Drop
 - Drag a file onto a folder to **move** it
@@ -73,7 +77,9 @@ Vela/
 │   ├── FileTableNSView.swift  # NSTableView-based file table with drag & drop
 │   └── StatusBarView.swift    # Bottom status bar (item count / selection info)
 └── Services/
-    └── FileService.swift      # Directory reading via FileManager
+    ├── FileService.swift      # Directory reading via FileManager
+    ├── FileOperations.swift   # Undoable file operations (move, trash, copy, create)
+    └── DirectoryWatcher.swift # FSEvents-based auto refresh of the current directory
 ```
 
 ## Installation
@@ -118,6 +124,9 @@ macOS 向けのシンプルなファイルエクスプローラーアプリで�
 - **アドレスバー** — パンくずリストをクリックして任意の親ディレクトリへ移動。クリックで直接パスを入力することも可能
 - **戻る / 進む / 上へ** — ツールバーのボタン、またはキーボード（`Cmd+↑` で親ディレクトリ、`Cmd+↓` で開く）
 - **隠しファイルの表示切替** — ツールバーのアイコン、または `Cmd+Shift+.`
+- **頭文字ジャンプ** — ファイル一覧で名前の先頭の文字を入力すると、その項目へ移動
+- **タブの復元** — 終了時に開いていたタブ（と選択中のタブ）を次回起動時に復元
+- **自動更新** — 他のアプリでファイルが追加・削除・名前変更・更新されると、一覧に自動で反映
 
 ### ファイル操作
 - **開く** — ダブルクリック、または `Cmd+↓`（ファイルはデフォルトアプリで開き、`.app` などのパッケージは起動）
@@ -131,6 +140,7 @@ macOS 向けのシンプルなファイルエクスプローラーアプリで�
 - **共有** — コンテキストメニューから macOS の共有メニューを表示
 - **プロパティ** — コンテキストメニューから Finder の「情報を見る」ウインドウを表示（初回は macOS がオートメーションの許可を求めます）
 - **ゴミ箱** — `Delete` キー、またはコンテキストメニュー（確認ダイアログあり）
+- **取り消し / やり直し** — ファイル一覧にフォーカスがある状態で `Cmd+Z` / `Cmd+Shift+Z`。名前変更・移動・コピー・ペースト・新規フォルダ・ZIP圧縮・ゴミ箱を取り消せる（コピーや新規作成の取り消しではゴミ箱へ移動）
 
 ### ドラッグ＆ドロップ
 - ファイルをフォルダへドラッグして**移動**
@@ -175,7 +185,9 @@ Vela/
 │   ├── FileTableNSView.swift  # NSTableView ベースのファイルテーブル（ドラッグ＆ドロップ対応）
 │   └── StatusBarView.swift    # 下部ステータスバー（項目数・選択情報）
 └── Services/
-    └── FileService.swift      # FileManager によるディレクトリ読み込み
+    ├── FileService.swift      # FileManager によるディレクトリ読み込み
+    ├── FileOperations.swift   # 取り消し可能なファイル操作（移動・ゴミ箱・コピー・作成）
+    └── DirectoryWatcher.swift # FSEvents による表示中ディレクトリの自動更新
 ```
 
 ## インストール
