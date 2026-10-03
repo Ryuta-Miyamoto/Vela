@@ -11,7 +11,7 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 
 ### Navigation
 - **Tabs** — Open multiple directories at once (`Cmd+T` for a new tab, `Cmd+W` to close a tab, `Cmd+Shift+W` to close the window). Arrow buttons appear when tabs overflow the tab bar
-- **Address Bar** — Click breadcrumbs to jump to any parent directory, or click to type a path directly
+- **Address Bar** — Click breadcrumbs to jump to any parent directory, or click to type a path directly (`Cmd+C` / `Cmd+V` work while editing)
 - **Back / Forward / Up** — Toolbar buttons or keyboard (`Cmd+↑` to go up, `Cmd+↓` to open)
 - **Toggle Hidden Files** — Toolbar icon or `Cmd+Shift+.`
 
@@ -20,7 +20,7 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 - **Show Package Contents** — Right-click an app or package to browse its contents
 - **Rename** — Select an item and press `Return`, or use the context menu, then enter the new name in the dialog
 - **New Folder** — `Cmd+Shift+N` or right-click on an empty area
-- **Copy** — Context menu "Copy" copies the file; `Cmd+C` copies the path as text
+- **Copy** — Context menu "Copy" copies the file; `Cmd+C` copies the path as text; "Copy Name" / "Copy Path" copy the name or full path as text
 - **Paste** — `Cmd+V` copies files on the clipboard into the current folder
 - **Move** — Choose a destination folder via the context menu
 - **Compress to ZIP** — Context menu creates `<name>.zip` next to the item (same format as Finder's Compress)

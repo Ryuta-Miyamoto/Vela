@@ -104,6 +104,8 @@ enum L10n {
     static var share: String                { tr("Share", "共有") }
     static var rename: String               { tr("Rename", "名前を変更") }
     static var copy: String                 { tr("Copy", "コピー") }
+    static var copyName: String             { tr("Copy Name", "名前をコピー") }
+    static var copyPath: String             { tr("Copy Path", "パスをコピー") }
     static var move: String                 { tr("Move", "移動") }
     static var compressToZip: String        { tr("Compress to ZIP", "ZIPに圧縮") }
     static var addToFavorites: String       { tr("Add to Favorites", "お気に入りに追加") }

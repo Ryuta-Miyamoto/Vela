@@ -115,8 +115,8 @@ final class FileTableCoordinator: NSObject {
         tableView.onDeleteKey  = { [weak self] in self?.handleDeleteKey() }
         tableView.onCmdUp      = { [weak self] in self?.viewModel?.goUp() }
         tableView.onCmdDown    = { [weak self] in self?.handleCmdDown() }
-        tableView.onCmdC       = { [weak self] in self?.handleCmdC() }
-        tableView.onCmdV       = { [weak self] in self?.handleCmdV() }
+        tableView.onCopy       = { [weak self] in self?.handleCopy() }
+        tableView.onPaste      = { [weak self] in self?.handlePaste() }
         tableView.onCmdShiftN  = { [weak self] in self?.viewModel?.createFolder() }
 
         let menu = NSMenu()
@@ -205,15 +205,19 @@ final class FileTableCoordinator: NSObject {
         viewModel?.openItem(items[row])
     }
 
-    private func handleCmdC() {
+    private func handleCopy() {
         let paths = tableView.selectedRowIndexes
             .compactMap { $0 < items.count ? items[$0].url.path : nil }
-        guard !paths.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string)
+        copyStrings(paths)
     }
 
-    private func handleCmdV() {
+    private func copyStrings(_ strings: [String]) {
+        guard !strings.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(strings.joined(separator: "\n"), forType: .string)
+    }
+
+    private func handlePaste() {
         guard let currentURL = viewModel?.currentURL else { return }
         guard let urls = NSPasteboard.general.readObjects(
             forClasses: [NSURL.self],
@@ -371,6 +375,8 @@ extension FileTableCoordinator: NSMenuDelegate {
             menu.addItem(.separator())
             addMenuItem(to: menu, title: L10n.rename, action: #selector(menuRenameItem))
             addMenuItem(to: menu, title: L10n.copy, action: #selector(menuCopyItem))
+            addMenuItem(to: menu, title: L10n.copyName, action: #selector(menuCopyName))
+            addMenuItem(to: menu, title: L10n.copyPath, action: #selector(menuCopyPath))
             addMenuItem(to: menu, title: L10n.move, action: #selector(menuMoveItem))
             addMenuItem(to: menu, title: L10n.compressToZip, action: #selector(menuCompressItem))
             if item.isDirectory {
@@ -449,6 +455,18 @@ extension FileTableCoordinator: NSMenuDelegate {
         viewModel?.copyItem(items[row])
     }
 
+    @objc private func menuCopyName() {
+        let row = tableView.clickedRow
+        guard row >= 0, row < items.count else { return }
+        copyStrings(contextTargets(forClickedRow: row).map(\.name))
+    }
+
+    @objc private func menuCopyPath() {
+        let row = tableView.clickedRow
+        guard row >= 0, row < items.count else { return }
+        copyStrings(contextTargets(forClickedRow: row).map(\.url.path))
+    }
+
     @objc private func menuMoveItem() {
         let row = tableView.clickedRow
         guard row >= 0, row < items.count else { return }
@@ -507,8 +525,8 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
     var onDeleteKey: (() -> Void)?
     var onCmdUp:     (() -> Void)?
     var onCmdDown:   (() -> Void)?
-    var onCmdC:      (() -> Void)?
-    var onCmdV:      (() -> Void)?
+    var onCopy:      (() -> Void)?
+    var onPaste:     (() -> Void)?
     var onCmdShiftN: (() -> Void)?
     var quickLookURL: URL?
 
@@ -541,14 +559,32 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
         default: break
         }
 
+        // ⌘C / ⌘V はここで横取りしない。performKeyEquivalent はフォーカスに関係なくウインドウ内の
+        // 全ビューに配られるため、ここで処理するとパス欄や検索欄でのコピー＆ペーストが効かなくなる。
+        // 代わりに Edit メニュー経由で first responder に届く copy(_:) / paste(_:) で処理する
         switch event.charactersIgnoringModifiers?.lowercased() {
-        case "c" where !shift: onCmdC?(); return true
-        case "v" where !shift: onCmdV?(); return true
         case "n" where shift:  onCmdShiftN?(); return true
         default: break
         }
 
         return super.performKeyEquivalent(with: event)
+    }
+
+    @objc func copy(_ sender: Any?) { onCopy?() }
+    @objc func paste(_ sender: Any?) { onPaste?() }
+
+    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        switch item.action {
+        case #selector(copy(_:)):
+            return !selectedRowIndexes.isEmpty
+        case #selector(paste(_:)):
+            return NSPasteboard.general.canReadObject(
+                forClasses: [NSURL.self],
+                options: [.urlReadingFileURLsOnly: true]
+            )
+        default:
+            return super.validateUserInterfaceItem(item)
+        }
     }
 
     // QL responder chain

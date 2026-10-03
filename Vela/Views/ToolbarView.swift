@@ -14,6 +14,7 @@ struct ToolbarView: View {
     @State private var editingPath = ""
     @State private var hoveredIndex: Int? = nil
     @FocusState private var searchFocused: Bool
+    @FocusState private var pathFieldFocused: Bool
 
     private var pathComponents: [String] { viewModel.currentURL.pathComponents }
 
@@ -77,6 +78,9 @@ struct ToolbarView: View {
         if isEditing {
             TextField(L10n.enterPath, text: $editingPath)
                 .textFieldStyle(.plain)
+                .focused($pathFieldFocused)
+                // 編集モードに入ったらすぐ入力・コピー＆ペーストできるようフォーカスを移す
+                .onAppear { pathFieldFocused = true }
                 .onSubmit { commitEdit() }
                 .onExitCommand { isEditing = false }
         } else {
