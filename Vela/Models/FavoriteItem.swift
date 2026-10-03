@@ -166,6 +166,26 @@ final class FavoritesStore {
         save()
     }
 
+    // MARK: Defaults
+
+    // どのグループにも残っていない初期項目（同じパスを手動で登録していれば残っているとみなす）
+    var missingDefaults: [DefaultFavorite] {
+        let allItems = groups.flatMap(\.items)
+        return DefaultFavorite.allCases.filter { key in
+            !allItems.contains { $0.defaultKey == key || $0.path == key.url.path }
+        }
+    }
+
+    // 欠けている初期項目だけを先頭のグループの末尾に戻す
+    func restoreDefaults() {
+        guard !groups.isEmpty else { return seedDefaults() }
+        let missing = missingDefaults
+        let restored = Self.defaultItems().filter { item in missing.contains { $0 == item.defaultKey } }
+        guard !restored.isEmpty else { return }
+        groups[0].items.append(contentsOf: restored)
+        save()
+    }
+
     // MARK: Persistence
 
     private static func defaultItems() -> [FavoriteItem] {

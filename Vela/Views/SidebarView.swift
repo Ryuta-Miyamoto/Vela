@@ -187,6 +187,10 @@ final class SidebarCoordinator: NSObject {
         }
     }
 
+    @objc private func menuRestoreDefaults() {
+        store?.restoreDefaults()
+    }
+
     @objc private func menuRemoveItem(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? UUID else { return }
         store?.removeItem(id: id)
@@ -428,6 +432,10 @@ extension SidebarCoordinator: NSMenuDelegate {
             menu.addItem(.separator())
         }
         addMenuItem(to: menu, title: L10n.newGroup, action: #selector(menuNewGroup), id: nil)
+        let restore = addMenuItem(to: menu, title: L10n.restoreDefaultFavorites, action: #selector(menuRestoreDefaults), id: nil)
+        if store?.missingDefaults.isEmpty != false {
+            restore.action = nil
+        }
     }
 
     @discardableResult

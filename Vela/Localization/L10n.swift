@@ -91,6 +91,7 @@ enum L10n {
     static var newGroupName: String      { tr("New Group", "新規グループ") }
     static var renameGroup: String       { tr("Rename Group…", "グループ名を変更…") }
     static var deleteGroup: String       { tr("Delete Group", "グループを削除") }
+    static var restoreDefaultFavorites: String { tr("Restore Default Items", "初期項目を復元") }
     static var groupNamePrompt: String   { tr("Enter a name for the group.", "グループの名前を入力してください。") }
     static var create: String            { tr("Create", "作成") }
     static var delete: String            { tr("Delete", "削除") }
