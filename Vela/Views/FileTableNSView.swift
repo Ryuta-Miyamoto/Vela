@@ -28,6 +28,7 @@ struct FileTableNSView: NSViewRepresentable {
     var language: AppLanguage
     var onSortChange: (FileSortState) -> Void
     var onAddToFavorites: ((FileItem) -> Void)?
+    var onOpenInNewTab: ((URL) -> Void)?
 
     func makeCoordinator() -> FileTableCoordinator { FileTableCoordinator() }
 
@@ -45,6 +46,7 @@ struct FileTableNSView: NSViewRepresentable {
         c.viewModel = viewModel
         c.onSortChange = onSortChange
         c.onAddToFavorites = onAddToFavorites
+        c.onOpenInNewTab = onOpenInNewTab
         c.reloadIfNeeded(newItems: items)
         c.applySortIndicator(sortState)
         c.applyLanguage(language)
@@ -59,6 +61,7 @@ final class FileTableCoordinator: NSObject {
     var viewModel: FileExplorerViewModel?
     var onSortChange: ((FileSortState) -> Void)?
     var onAddToFavorites: ((FileItem) -> Void)?
+    var onOpenInNewTab: ((URL) -> Void)?
 
     private var currentSortState = FileSortState(key: "", ascending: true)
     private var currentLanguage: AppLanguage?
@@ -118,6 +121,7 @@ final class FileTableCoordinator: NSObject {
         tableView.onCopy       = { [weak self] in self?.handleCopy() }
         tableView.onPaste      = { [weak self] in self?.handlePaste() }
         tableView.onCmdShiftN  = { [weak self] in self?.viewModel?.createFolder() }
+        tableView.onMiddleClick = { [weak self] row in self?.handleMiddleClick(row: row) }
 
         let menu = NSMenu()
         menu.delegate = self
@@ -203,6 +207,14 @@ final class FileTableCoordinator: NSObject {
         let row = tableView.selectedRow
         guard row >= 0, row < items.count else { return }
         viewModel?.openItem(items[row])
+    }
+
+    // .app などのパッケージはダブルクリックと同じく単一ファイル扱いとし、新規タブでは開かない
+    private func handleMiddleClick(row: Int) {
+        guard row >= 0, row < items.count else { return }
+        let item = items[row]
+        guard item.isDirectory, !item.isPackage else { return }
+        onOpenInNewTab?(item.url)
     }
 
     private func handleCopy() {
@@ -528,7 +540,14 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
     var onCopy:      (() -> Void)?
     var onPaste:     (() -> Void)?
     var onCmdShiftN: (() -> Void)?
+    var onMiddleClick: ((Int) -> Void)?
     var quickLookURL: URL?
+
+    override func otherMouseDown(with event: NSEvent) {
+        // buttonNumber 2 = ホイール（中ボタン）
+        guard event.buttonNumber == 2 else { return super.otherMouseDown(with: event) }
+        onMiddleClick?(row(at: convert(event.locationInWindow, from: nil)))
+    }
 
     override func keyDown(with event: NSEvent) {
         let cmd = event.modifierFlags.contains(.command)
