@@ -19,6 +19,10 @@ struct FileListView: View {
             switch sortState.key {
             case "date": return sortState.ascending ? $0.modifiedDate < $1.modifiedDate : $0.modifiedDate > $1.modifiedDate
             case "size": return sortState.ascending ? $0.size < $1.size : $0.size > $1.size
+            case "created": return sortState.ascending ? $0.createdDate < $1.createdDate : $0.createdDate > $1.createdDate
+            case "kind" where $0.kind != $1.kind:
+                let cmp = $0.kind.localizedStandardCompare($1.kind)
+                return sortState.ascending ? cmp == .orderedAscending : cmp == .orderedDescending
             default:
                 let cmp = $0.name.localizedStandardCompare($1.name)
                 return sortState.ascending ? cmp == .orderedAscending : cmp == .orderedDescending

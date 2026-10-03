@@ -158,9 +158,63 @@ final class FileExplorerViewModel {
         reload()
     }
 
-    func copyItem(_ item: FileItem) {
+    func copyItems(_ items: [FileItem]) {
+        guard !items.isEmpty else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([item.url as NSURL])
+        NSPasteboard.general.writeObjects(items.map { $0.url as NSURL })
+    }
+
+    // Finder の ⌘D と同じく、同じフォルダに「<名前> copy」を作る
+    func duplicateItems(_ items: [FileItem]) {
+        for item in items {
+            let dest = Self.uniqueURL(in: item.url.deletingLastPathComponent(),
+                                      baseName: item.url.deletingPathExtension().lastPathComponent,
+                                      pathExtension: item.url.pathExtension,
+                                      suffix: L10n.copySuffix)
+            try? FileOperations.copy(from: item.url, to: dest, actionName: L10n.duplicate)
+        }
+        reload()
+    }
+
+    // Finder と同じく、拡張子も含めた名前の後ろに「alias」を付ける（例: "Report.pdf alias"）
+    func makeAliases(for items: [FileItem]) {
+        for item in items {
+            let dest = Self.uniqueURL(in: item.url.deletingLastPathComponent(),
+                                      baseName: item.name, pathExtension: "",
+                                      suffix: L10n.aliasSuffix)
+            do {
+                try FileOperations.makeAlias(of: item.url, at: dest)
+            } catch {
+                NSLog("Failed to make alias: \(error)")
+            }
+        }
+        reload()
+    }
+
+    func openInTerminal(_ url: URL) {
+        guard let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") else { return }
+        // フォルダを Terminal で開くと、そのフォルダをカレントディレクトリにした新しいウインドウが開く
+        NSWorkspace.shared.open([url], withApplicationAt: terminalURL, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    // URL は末尾の "/" の有無で == が一致しないことがあるため、パスで比べる
+    private static func isParent(_ folder: URL, of url: URL) -> Bool {
+        url.deletingLastPathComponent().standardizedFileURL.path == folder.standardizedFileURL.path
+    }
+
+    // 「<base><suffix>.<ext>」、既にあれば「<base><suffix> 2.<ext>」…と空いている名前を探す
+    private static func uniqueURL(in folder: URL, baseName: String, pathExtension: String, suffix: String) -> URL {
+        func url(_ name: String) -> URL {
+            let u = folder.appendingPathComponent(name)
+            return pathExtension.isEmpty ? u : u.appendingPathExtension(pathExtension)
+        }
+        var candidate = url(baseName + suffix)
+        var counter = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = url("\(baseName)\(suffix) \(counter)")
+            counter += 1
+        }
+        return candidate
     }
 
     func moveItem(_ item: FileItem) {
@@ -196,6 +250,7 @@ final class FileExplorerViewModel {
 
     func moveURL(_ source: URL, to destFolder: URL) {
         guard source != destFolder,
+              !Self.isParent(destFolder, of: source),
               !destFolder.path.hasPrefix(source.path + "/") else { return }
         let dest = destFolder.appendingPathComponent(source.lastPathComponent)
         try? FileOperations.move(from: source, to: dest, actionName: L10n.move)
@@ -205,7 +260,13 @@ final class FileExplorerViewModel {
     func copyURL(_ source: URL, to destFolder: URL) {
         guard source != destFolder,
               !destFolder.path.hasPrefix(source.path + "/") else { return }
-        let dest = destFolder.appendingPathComponent(source.lastPathComponent)
+        // 同じフォルダへのペーストは名前がぶつかるので、Finder と同じく複製として扱う
+        let dest = Self.isParent(destFolder, of: source)
+            ? Self.uniqueURL(in: destFolder,
+                             baseName: source.deletingPathExtension().lastPathComponent,
+                             pathExtension: source.pathExtension,
+                             suffix: L10n.copySuffix)
+            : destFolder.appendingPathComponent(source.lastPathComponent)
         try? FileOperations.copy(from: source, to: dest)
         if destFolder == currentURL { reload() }
     }

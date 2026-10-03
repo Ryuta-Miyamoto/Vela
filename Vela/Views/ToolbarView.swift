@@ -41,6 +41,14 @@ struct ToolbarView: View {
                                 .stroke(isEditing ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
                         )
                 )
+                .contextMenu {
+                    Button(L10n.openInTerminal) { viewModel.openInTerminal(viewModel.currentURL) }
+                }
+
+            Button { viewModel.openInTerminal(viewModel.currentURL) } label: {
+                Image(systemName: "terminal")
+            }
+            .help(L10n.openInTerminal)
 
             Divider().frame(height: 18)
 

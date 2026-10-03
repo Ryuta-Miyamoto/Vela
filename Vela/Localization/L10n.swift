@@ -97,6 +97,8 @@ enum L10n {
     static var columnName: String         { tr("Name", "名前") }
     static var columnDateModified: String { tr("Date Modified", "更新日") }
     static var columnSize: String         { tr("Size", "サイズ") }
+    static var columnDateCreated: String  { tr("Date Created", "作成日") }
+    static var columnKind: String         { tr("Kind", "種類") }
 
     static func searchResult(query: String, count: Int) -> String {
         tr("\"\(query)\": \(count) \(count == 1 ? "item" : "items")", "「\(query)」: \(count) 件")
@@ -121,6 +123,15 @@ enum L10n {
     static var copyName: String             { tr("Copy Name", "名前をコピー") }
     static var copyPath: String             { tr("Copy Path", "パスをコピー") }
     static var move: String                 { tr("Move", "移動") }
+    static var duplicate: String            { tr("Duplicate", "複製") }
+    static var makeAlias: String            { tr("Make Alias", "エイリアスを作成") }
+    static var paste: String                { tr("Paste", "ペースト") }
+    static var moveItemHere: String         { tr("Move Item Here", "ここに項目を移動") }
+    static var openInTerminal: String       { tr("Open in Terminal", "ターミナルで開く") }
+
+    // 複製・エイリアスの名前に付ける語（Finder と同じ表記。例: "Report copy.pdf" / "Report のコピー.pdf"）
+    static var copySuffix: String  { tr(" copy", " のコピー") }
+    static var aliasSuffix: String { tr(" alias", " のエイリアス") }
     static var compressToZip: String        { tr("Compress to ZIP", "ZIPに圧縮") }
     static var addToFavorites: String       { tr("Add to Favorites", "お気に入りに追加") }
     static var properties: String           { tr("Properties", "プロパティ") }

@@ -36,9 +36,16 @@ enum FileOperations {
         }
     }
 
-    static func copy(from source: URL, to dest: URL) throws {
+    static func copy(from source: URL, to dest: URL, actionName: String = L10n.copy) throws {
         try FileManager.default.copyItem(at: source, to: dest)
-        registerCreation(of: dest, actionName: L10n.copy)
+        registerCreation(of: dest, actionName: actionName)
+    }
+
+    // Finder の「エイリアスを作成」と同じ形式（ブックマークファイル）。元の項目が移動しても追従できる
+    static func makeAlias(of source: URL, at dest: URL) throws {
+        let data = try source.bookmarkData(options: .suitableForBookmarkFile)
+        try URL.writeBookmarkData(data, to: dest)
+        registerCreation(of: dest, actionName: L10n.makeAlias)
     }
 
     static func createDirectory(at url: URL) throws {
