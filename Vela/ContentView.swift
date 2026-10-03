@@ -219,6 +219,20 @@ final class AppState {
         tabs.append(FileExplorerViewModel(url: url))
     }
 
+    // 端まで来たら反対側へ回り込む（Finder / Safari と同じ挙動）
+    func selectNextTab() {
+        selectedIndex = (selectedIndex + 1) % tabs.count
+    }
+
+    func selectPreviousTab() {
+        selectedIndex = (selectedIndex - 1 + tabs.count) % tabs.count
+    }
+
+    func selectTab(at index: Int) {
+        guard tabs.indices.contains(index) else { return }
+        selectedIndex = index
+    }
+
     func closeTab(at index: Int) {
         // 残り1タブを閉じるのはウインドウを閉じる操作に相当するため、アプリを終了する
         guard tabs.count > 1 else {
@@ -264,10 +278,29 @@ struct ContentView: View {
             }
             StatusBarView(viewModel: appState.currentTab)
         }
+        .background { tabShortcuts }
         .frame(minWidth: 800, minHeight: 520)
         .navigationTitle(appState.currentTab.tabTitle)
         // ⌘T / ⌘W のメニューコマンド（VelaApp の TabCommands）から参照する
         .focusedSceneValue(\.appState, appState)
+    }
+
+    // メニューに並べると冗長になる補助ショートカット（Safari と同じ割り当て）。
+    // ⌘⇧[ / ⌘⇧] で前後のタブ、⌘1〜⌘8 で n 番目のタブ、⌘9 で最後のタブへ移動する
+    private var tabShortcuts: some View {
+        Group {
+            Button("") { appState.selectPreviousTab() }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+            Button("") { appState.selectNextTab() }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+            ForEach(1..<9) { number in
+                Button("") { appState.selectTab(at: number - 1) }
+                    .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
+            }
+            Button("") { appState.selectTab(at: appState.tabs.count - 1) }
+                .keyboardShortcut("9", modifiers: .command)
+        }
+        .hidden()
     }
 }
 

@@ -44,6 +44,16 @@ private struct TabCommands: Commands {
             .keyboardShortcut("w", modifiers: .command)
             .disabled(appState == nil)
         }
+        // Finder と同じく、タブの前後移動はウインドウメニューに置く
+        CommandGroup(after: .windowArrangement) {
+            Divider()
+            Button(L10n.showPreviousTab) { appState?.selectPreviousTab() }
+                .keyboardShortcut(.tab, modifiers: [.control, .shift])
+                .disabled((appState?.tabs.count ?? 0) < 2)
+            Button(L10n.showNextTab) { appState?.selectNextTab() }
+                .keyboardShortcut(.tab, modifiers: .control)
+                .disabled((appState?.tabs.count ?? 0) < 2)
+        }
     }
 }
 

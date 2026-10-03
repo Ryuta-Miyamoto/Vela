@@ -56,6 +56,8 @@ enum L10n {
     static var newTab: String      { tr("New Tab", "新規タブ") }
     static var closeTab: String    { tr("Close Tab", "タブを閉じる") }
     static var closeWindow: String { tr("Close Window", "ウインドウを閉じる") }
+    static var showPreviousTab: String { tr("Show Previous Tab", "前のタブを表示") }
+    static var showNextTab: String     { tr("Show Next Tab", "次のタブを表示") }
 
     // MARK: Tab Bar
     static var newTabHelp: String         { tr("New Tab (⌘T)", "新規タブ (⌘T)") }
