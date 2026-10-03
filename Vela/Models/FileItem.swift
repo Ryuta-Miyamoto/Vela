@@ -16,6 +16,9 @@ struct FileItem: Identifiable, Equatable, Hashable {
     let url: URL
     let size: Int64
     let modifiedDate: Date
+    let createdDate: Date
+    // 「フォルダ」「PDF書類」など。macOS のシステム言語で返る（アプリの表示言語には追従しない）
+    let kind: String
     let isDirectory: Bool
     // .app や .bundle など、Finder 上では単一ファイルとして扱われるディレクトリ
     let isPackage: Bool

@@ -26,13 +26,17 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 - **Rename** — Select an item and press `Return`, or use the context menu, then enter the new name in the dialog
 - **New Folder** — `Cmd+Shift+N` or right-click on an empty area
 - **Copy** — Context menu "Copy" copies the file; `Cmd+C` copies the path as text; "Copy Name" / "Copy Path" copy the name or full path as text
-- **Paste** — `Cmd+V` copies files on the clipboard into the current folder
+- **Paste** — `Cmd+V` copies files on the clipboard into the current folder (pasting into the same folder makes a copy named `<name> copy`)
+- **Move Item Here (Cut & Paste)** — `Cmd+Option+V` moves files on the clipboard into the current folder. Also available from the context menu on an empty area
+- **Duplicate** — `Cmd+D` or context menu creates `<name> copy` in the same folder
+- **Make Alias** — `Ctrl+Cmd+A` or context menu creates a Finder alias (`<name> alias`)
+- **Open in Terminal** — Context menu on a folder or an empty area, the toolbar terminal button, or right-click the address bar
 - **Move** — Choose a destination folder via the context menu
 - **Compress to ZIP** — Context menu creates `<name>.zip` next to the item (same format as Finder's Compress)
 - **Share** — Context menu opens the macOS share menu
 - **Properties** — Context menu opens Finder's Get Info window (macOS asks for Automation permission on first use)
 - **Trash** — `Delete` key or context menu (with confirmation dialog)
-- **Undo / Redo** — `Cmd+Z` / `Cmd+Shift+Z` while the file list is focused undo and redo rename, move, copy, paste, new folder, Compress to ZIP and Trash (undone copies and new items go to the Trash)
+- **Undo / Redo** — `Cmd+Z` / `Cmd+Shift+Z` while the file list is focused undo and redo rename, move, copy, paste, duplicate, make alias, new folder, Compress to ZIP and Trash (undone copies and new items go to the Trash)
 
 ### Drag & Drop
 - Drag a file onto a folder to **move** it
@@ -51,7 +55,11 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 - Use the toolbar search field or `Cmd+F` to filter the current directory in real time
 
 ### Sort
-- Click column headers (Name / Date Modified / Size) to sort; click again to reverse
+- Click column headers (Name / Date Modified / Date Created / Size / Kind) to sort; click again to reverse
+
+### Columns
+- Right-click the column header to show or hide Date Modified, Date Created, Size and Kind (Date Created is hidden by default)
+- Column visibility and widths are remembered
 
 ### Language
 - Switch the display language from **Vela → Language** in the menu bar (English / 日本語, default: English)
@@ -134,13 +142,17 @@ macOS 向けのシンプルなファイルエクスプローラーアプリで�
 - **名前変更** — 項目を選択して `Return` キー、またはコンテキストメニューから、ダイアログに新しい名前を入力
 - **新規フォルダ作成** — `Cmd+Shift+N`、またはコンテキストメニュー（空白部分を右クリック）
 - **コピー** — コンテキストメニューの「コピー」でファイルをコピー。`Cmd+C` はパスをテキストとしてコピー
-- **ペースト** — `Cmd+V` でクリップボードのファイルを現在のフォルダにコピー
+- **ペースト** — `Cmd+V` でクリップボードのファイルを現在のフォルダにコピー（同じフォルダへのペーストは「<名前> のコピー」を作成）
+- **ここに項目を移動（カット＆ペースト）** — `Cmd+Option+V` でクリップボードのファイルを現在のフォルダへ移動。空白部分の右クリックメニューからも可能
+- **複製** — `Cmd+D`、またはコンテキストメニューで同じフォルダに「<名前> のコピー」を作成
+- **エイリアスを作成** — `Ctrl+Cmd+A`、またはコンテキストメニューで Finder のエイリアス（「<名前> のエイリアス」）を作成
+- **ターミナルで開く** — フォルダや空白部分の右クリックメニュー、ツールバーのターミナルボタン、アドレスバーの右クリックから
 - **移動** — コンテキストメニューの「移動」から移動先フォルダを選択
 - **ZIPに圧縮** — コンテキストメニューから、項目と同じ場所に `<名前>.zip` を作成（Finder の「圧縮」と同じ形式）
 - **共有** — コンテキストメニューから macOS の共有メニューを表示
 - **プロパティ** — コンテキストメニューから Finder の「情報を見る」ウインドウを表示（初回は macOS がオートメーションの許可を求めます）
 - **ゴミ箱** — `Delete` キー、またはコンテキストメニュー（確認ダイアログあり）
-- **取り消し / やり直し** — ファイル一覧にフォーカスがある状態で `Cmd+Z` / `Cmd+Shift+Z`。名前変更・移動・コピー・ペースト・新規フォルダ・ZIP圧縮・ゴミ箱を取り消せる（コピーや新規作成の取り消しではゴミ箱へ移動）
+- **取り消し / やり直し** — ファイル一覧にフォーカスがある状態で `Cmd+Z` / `Cmd+Shift+Z`。名前変更・移動・コピー・ペースト・複製・エイリアス作成・新規フォルダ・ZIP圧縮・ゴミ箱を取り消せる（コピーや新規作成の取り消しではゴミ箱へ移動）
 
 ### ドラッグ＆ドロップ
 - ファイルをフォルダへドラッグして**移動**
@@ -159,7 +171,11 @@ macOS 向けのシンプルなファイルエクスプローラーアプリで�
 - ツールバーの検索フィールド、または `Cmd+F` でアクティブなディレクトリ内をリアルタイムフィルタリング
 
 ### ソート
-- 名前 / 更新日 / サイズの各列ヘッダーをクリックしてソート（昇順・降順切り替え）
+- 名前 / 更新日 / 作成日 / サイズ / 種類の各列ヘッダーをクリックしてソート（昇順・降順切り替え）
+
+### 列
+- 列ヘッダーを右クリックして、更新日・作成日・サイズ・種類の表示 / 非表示を切り替え（作成日は初期状態で非表示）
+- 列の表示状態と幅は保存され、次回以降も引き継がれる
 
 ### 表示言語
 - メニューバーの **Vela → Language** から表示言語を切り替え（English / 日本語、デフォルトは English）

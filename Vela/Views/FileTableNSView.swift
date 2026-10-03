@@ -13,7 +13,7 @@ import UniformTypeIdentifiers
 // MARK: - Sort State
 
 struct FileSortState: Equatable {
-    var key: String       // "name" | "date" | "size"
+    var key: String       // "name" | "date" | "created" | "size" | "kind"
     var ascending: Bool
     static let `default` = FileSortState(key: "name", ascending: true)
 }
@@ -71,9 +71,15 @@ final class FileTableCoordinator: NSObject {
 
     let tableView = ResponsiveTableView()
 
-    private let nameID = NSUserInterfaceItemIdentifier("name")
-    private let dateID = NSUserInterfaceItemIdentifier("date")
-    private let sizeID = NSUserInterfaceItemIdentifier("size")
+    private let nameID    = NSUserInterfaceItemIdentifier("name")
+    private let dateID    = NSUserInterfaceItemIdentifier("date")
+    private let createdID = NSUserInterfaceItemIdentifier("created")
+    private let sizeID    = NSUserInterfaceItemIdentifier("size")
+    private let kindID    = NSUserInterfaceItemIdentifier("kind")
+
+    // 列ヘッダーの右クリックで表示を切り替えられる列（名前列は常に表示）
+    private var optionalColumnIDs: [NSUserInterfaceItemIdentifier] { [dateID, createdID, sizeID, kindID] }
+    private let headerMenu = NSMenu()
 
     override init() {
         super.init()
@@ -103,12 +109,35 @@ final class FileTableCoordinator: NSObject {
         dateCol.sortDescriptorPrototype = NSSortDescriptor(key: "date", ascending: true)
         tableView.addTableColumn(dateCol)
 
+        let createdCol = NSTableColumn(identifier: createdID)
+        createdCol.width = 180
+        createdCol.minWidth = 100
+        createdCol.resizingMask = .userResizingMask
+        createdCol.sortDescriptorPrototype = NSSortDescriptor(key: "created", ascending: true)
+        // Finder と同じく、作成日は初期状態では隠しておく
+        createdCol.isHidden = true
+        tableView.addTableColumn(createdCol)
+
         let sizeCol = NSTableColumn(identifier: sizeID)
         sizeCol.width = 90
         sizeCol.minWidth = 60
         sizeCol.resizingMask = .userResizingMask
         sizeCol.sortDescriptorPrototype = NSSortDescriptor(key: "size", ascending: true)
         tableView.addTableColumn(sizeCol)
+
+        let kindCol = NSTableColumn(identifier: kindID)
+        kindCol.width = 140
+        kindCol.minWidth = 80
+        kindCol.resizingMask = .userResizingMask
+        kindCol.sortDescriptorPrototype = NSSortDescriptor(key: "kind", ascending: true)
+        tableView.addTableColumn(kindCol)
+
+        // 列の表示・非表示と幅を UserDefaults に保存し、タブや再起動をまたいで引き継ぐ
+        tableView.autosaveName = "Vela.fileTable"
+        tableView.autosaveTableColumns = true
+
+        headerMenu.delegate = self
+        tableView.headerView?.menu = headerMenu
 
         tableView.target = self
         tableView.doubleAction = #selector(handleDoubleClick)
@@ -123,6 +152,15 @@ final class FileTableCoordinator: NSObject {
         tableView.onCmdShiftN  = { [weak self] in self?.viewModel?.createFolder() }
         tableView.onMiddleClick = { [weak self] row in self?.handleMiddleClick(row: row) }
         tableView.onUndoRedo   = { [weak self] in self?.viewModel?.reload() }
+        tableView.onMoveItemHere = { [weak self] in self?.handleMoveItemHere() }
+        tableView.onDuplicate  = { [weak self] in
+            guard let self else { return }
+            viewModel?.duplicateItems(selectedItems)
+        }
+        tableView.onMakeAlias  = { [weak self] in
+            guard let self else { return }
+            viewModel?.makeAliases(for: selectedItems)
+        }
 
         let menu = NSMenu()
         menu.delegate = self
@@ -166,8 +204,10 @@ final class FileTableCoordinator: NSObject {
         defer { isUpdatingSortIndicator = false }
         let colID: NSUserInterfaceItemIdentifier
         switch state.key {
-        case "date": colID = dateID
-        case "size": colID = sizeID
+        case "date":    colID = dateID
+        case "created": colID = createdID
+        case "size":    colID = sizeID
+        case "kind":    colID = kindID
         default:     colID = nameID
         }
         tableView.sortDescriptors = [NSSortDescriptor(key: state.key, ascending: state.ascending)]
@@ -178,11 +218,22 @@ final class FileTableCoordinator: NSObject {
         guard language != currentLanguage else { return }
         currentLanguage = language
         tableView.tableColumn(withIdentifier: nameID)?.title = L10n.columnName
-        tableView.tableColumn(withIdentifier: dateID)?.title = L10n.columnDateModified
-        tableView.tableColumn(withIdentifier: sizeID)?.title = L10n.columnSize
+        for id in optionalColumnIDs {
+            tableView.tableColumn(withIdentifier: id)?.title = columnTitle(for: id)
+        }
         // 日付の表記も表示言語に合わせる
         Self.dateFormatter.locale = language.locale
         tableView.reloadData()
+    }
+
+    private func columnTitle(for id: NSUserInterfaceItemIdentifier) -> String {
+        switch id {
+        case dateID:    return L10n.columnDateModified
+        case createdID: return L10n.columnDateCreated
+        case sizeID:    return L10n.columnSize
+        case kindID:    return L10n.columnKind
+        default:        return L10n.columnName
+        }
     }
 
     // MARK: - Key Handlers
@@ -243,13 +294,26 @@ final class FileTableCoordinator: NSObject {
         NSPasteboard.general.setString(strings.joined(separator: "\n"), forType: .string)
     }
 
-    private func handlePaste() {
-        guard let currentURL = viewModel?.currentURL else { return }
-        guard let urls = NSPasteboard.general.readObjects(
+    private func pasteboardFileURLs() -> [URL] {
+        NSPasteboard.general.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
-        ) as? [URL], !urls.isEmpty else { return }
-        for url in urls { viewModel?.copyURL(url, to: currentURL) }
+        ) as? [URL] ?? []
+    }
+
+    private func handlePaste() {
+        guard let currentURL = viewModel?.currentURL else { return }
+        for url in pasteboardFileURLs() { viewModel?.copyURL(url, to: currentURL) }
+    }
+
+    // Finder の ⌥⌘V と同じく、クリップボードのファイルをコピーではなく移動する（カット＆ペースト）
+    private func handleMoveItemHere() {
+        guard let currentURL = viewModel?.currentURL else { return }
+        for url in pasteboardFileURLs() { viewModel?.moveURL(url, to: currentURL) }
+    }
+
+    private var selectedItems: [FileItem] {
+        tableView.selectedRowIndexes.compactMap { $0 < items.count ? items[$0] : nil }
     }
 
     // MARK: - Trash (shared between key and menu)
@@ -353,25 +417,31 @@ extension FileTableCoordinator: NSTableViewDelegate {
             return cell
 
         case dateID:
-            let cell = (tableView.makeView(withIdentifier: dateID, owner: nil) as? FileLabelCellView)
-                       ?? FileLabelCellView()
-            cell.identifier = dateID
-            cell.set(text: Self.dateFormatter.string(from: item.modifiedDate))
-            return cell
+            return labelCell(for: dateID, text: Self.dateFormatter.string(from: item.modifiedDate))
+
+        case createdID:
+            return labelCell(for: createdID, text: Self.dateFormatter.string(from: item.createdDate))
 
         case sizeID:
-            let cell = (tableView.makeView(withIdentifier: sizeID, owner: nil) as? FileLabelCellView)
-                       ?? FileLabelCellView()
-            cell.identifier = sizeID
             let text = item.isDirectory
                 ? "—"
                 : ByteCountFormatter.string(fromByteCount: item.size, countStyle: .file)
-            cell.set(text: text)
-            return cell
+            return labelCell(for: sizeID, text: text)
+
+        case kindID:
+            return labelCell(for: kindID, text: item.kind)
 
         default:
             return nil
         }
+    }
+
+    private func labelCell(for id: NSUserInterfaceItemIdentifier, text: String) -> FileLabelCellView {
+        let cell = (tableView.makeView(withIdentifier: id, owner: nil) as? FileLabelCellView)
+                   ?? FileLabelCellView()
+        cell.identifier = id
+        cell.set(text: text)
+        return cell
     }
 
     // 頭文字ジャンプ（type-to-select）。ビューベースの NSTableView は、この照合用の文字列を
@@ -395,15 +465,29 @@ extension FileTableCoordinator: NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        if menu === headerMenu {
+            buildHeaderMenu(menu)
+            return
+        }
         let row = tableView.clickedRow
 
         if row < 0 {
             addMenuItem(to: menu, title: L10n.newFolder, action: #selector(menuCreateFolder))
+            if !pasteboardFileURLs().isEmpty {
+                menu.addItem(.separator())
+                addMenuItem(to: menu, title: L10n.paste, action: #selector(menuPaste))
+                addMenuItem(to: menu, title: L10n.moveItemHere, action: #selector(menuMoveItemHere))
+            }
+            menu.addItem(.separator())
+            addMenuItem(to: menu, title: L10n.openInTerminal, action: #selector(menuOpenCurrentFolderInTerminal))
         } else {
             let item = items[row]
             addMenuItem(to: menu, title: L10n.open, action: #selector(menuOpenItem))
             if item.isPackage {
                 addMenuItem(to: menu, title: L10n.showPackageContents, action: #selector(menuShowPackageContents))
+            }
+            if item.isDirectory {
+                addMenuItem(to: menu, title: L10n.openInTerminal, action: #selector(menuOpenInTerminal))
             }
             menu.addItem(.separator())
             addMenuItem(to: menu, title: L10n.share, action: #selector(menuShareItem))
@@ -412,6 +496,8 @@ extension FileTableCoordinator: NSMenuDelegate {
             addMenuItem(to: menu, title: L10n.copy, action: #selector(menuCopyItem))
             addMenuItem(to: menu, title: L10n.copyName, action: #selector(menuCopyName))
             addMenuItem(to: menu, title: L10n.copyPath, action: #selector(menuCopyPath))
+            addMenuItem(to: menu, title: L10n.duplicate, action: #selector(menuDuplicateItem))
+            addMenuItem(to: menu, title: L10n.makeAlias, action: #selector(menuMakeAlias))
             addMenuItem(to: menu, title: L10n.move, action: #selector(menuMoveItem))
             addMenuItem(to: menu, title: L10n.compressToZip, action: #selector(menuCompressItem))
             if item.isDirectory {
@@ -487,7 +573,52 @@ extension FileTableCoordinator: NSMenuDelegate {
     @objc private func menuCopyItem() {
         let row = tableView.clickedRow
         guard row >= 0, row < items.count else { return }
-        viewModel?.copyItem(items[row])
+        viewModel?.copyItems(contextTargets(forClickedRow: row))
+    }
+
+    @objc private func menuDuplicateItem() {
+        let row = tableView.clickedRow
+        guard row >= 0, row < items.count else { return }
+        viewModel?.duplicateItems(contextTargets(forClickedRow: row))
+    }
+
+    @objc private func menuMakeAlias() {
+        let row = tableView.clickedRow
+        guard row >= 0, row < items.count else { return }
+        viewModel?.makeAliases(for: contextTargets(forClickedRow: row))
+    }
+
+    @objc private func menuOpenInTerminal() {
+        let row = tableView.clickedRow
+        guard row >= 0, row < items.count else { return }
+        viewModel?.openInTerminal(items[row].url)
+    }
+
+    @objc private func menuOpenCurrentFolderInTerminal() {
+        guard let currentURL = viewModel?.currentURL else { return }
+        viewModel?.openInTerminal(currentURL)
+    }
+
+    @objc private func menuPaste() { handlePaste() }
+    @objc private func menuMoveItemHere() { handleMoveItemHere() }
+
+    // MARK: - Header Menu (Column Visibility)
+
+    private func buildHeaderMenu(_ menu: NSMenu) {
+        for id in optionalColumnIDs {
+            guard let column = tableView.tableColumn(withIdentifier: id) else { continue }
+            let item = addMenuItem(to: menu, title: columnTitle(for: id), action: #selector(toggleColumn(_:)))
+            item.representedObject = id
+            item.state = column.isHidden ? .off : .on
+        }
+    }
+
+    @objc private func toggleColumn(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? NSUserInterfaceItemIdentifier,
+              let column = tableView.tableColumn(withIdentifier: id) else { return }
+        column.isHidden.toggle()
+        // 列を出し入れした分は名前列の幅で吸収する
+        tableView.sizeLastColumnToFit()
     }
 
     @objc private func menuCopyName() {
@@ -565,6 +696,9 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
     var onCmdShiftN: (() -> Void)?
     var onMiddleClick: ((Int) -> Void)?
     var onUndoRedo:  (() -> Void)?
+    var onMoveItemHere: (() -> Void)?
+    var onDuplicate: (() -> Void)?
+    var onMakeAlias: (() -> Void)?
     var quickLookURL: URL?
 
     override func otherMouseDown(with event: NSEvent) {
@@ -607,6 +741,18 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
         // 代わりに Edit メニュー経由で first responder に届く copy(_:) / paste(_:) で処理する
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "n" where shift:  onCmdShiftN?(); return true
+        default: break
+        }
+
+        // 以下はファイル一覧にフォーカスがあるときだけ。パス欄や検索欄の編集中には横取りしない
+        guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
+        let option = flags.contains(.option)
+        let control = flags.contains(.control)
+        // charactersIgnoringModifiers は Shift 以外の修飾キーを無視するので、⌥⌘V も "v" で届く
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "v" where option && !shift && !control: onMoveItemHere?(); return true  // ⌥⌘V
+        case "d" where !option && !shift && !control: onDuplicate?(); return true    // ⌘D
+        case "a" where control && !option && !shift: onMakeAlias?(); return true     // ⌃⌘A
         default: break
         }
 
