@@ -59,6 +59,18 @@ enum L10n {
     static var showPreviousTab: String { tr("Show Previous Tab", "前のタブを表示") }
     static var showNextTab: String     { tr("Show Next Tab", "次のタブを表示") }
 
+    // MARK: Undo / Redo（ファイル一覧にフォーカスがあるときの Edit メニュー項目）
+    static var undo: String { tr("Undo", "取り消す") }
+    static var redo: String { tr("Redo", "やり直す") }
+
+    static func undoAction(_ actionName: String) -> String {
+        tr("Undo \(actionName)", "「\(actionName)」を取り消す")
+    }
+
+    static func redoAction(_ actionName: String) -> String {
+        tr("Redo \(actionName)", "「\(actionName)」をやり直す")
+    }
+
     // MARK: Tab Bar
     static var newTabHelp: String         { tr("New Tab (⌘T)", "新規タブ (⌘T)") }
     static var closeTabHelp: String       { tr("Close Tab (⌘W)", "タブを閉じる (⌘W)") }

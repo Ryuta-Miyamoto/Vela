@@ -11,7 +11,9 @@ import AppKit
 @Observable
 final class FileExplorerViewModel {
     let id = UUID()
-    var currentURL: URL
+    var currentURL: URL {
+        didSet { startWatching() }
+    }
     var items: [FileItem] = []
     var showHiddenFiles: Bool = false
     var searchText: String = ""
@@ -19,6 +21,8 @@ final class FileExplorerViewModel {
 
     private var backStack: [URL] = []
     private var forwardStack: [URL] = []
+    // 他のアプリでの変更も一覧に反映するため、表示中のディレクトリを監視する（背面のタブも含む）
+    @ObservationIgnored private var watcher: DirectoryWatcher?
 
     var canGoBack: Bool    { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
@@ -28,6 +32,11 @@ final class FileExplorerViewModel {
     init(url: URL = FileManager.default.homeDirectoryForCurrentUser) {
         self.currentURL = url
         reload()
+        startWatching()
+    }
+
+    private func startWatching() {
+        watcher = DirectoryWatcher(url: currentURL) { [weak self] in self?.reload() }
     }
 
     func navigate(to url: URL) {
@@ -118,7 +127,9 @@ final class FileExplorerViewModel {
         process.arguments = ["-c", "-k", "--sequesterRsrc", "--keepParent", baseName, destURL.path]
         process.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
-                if proc.terminationStatus != 0 {
+                if proc.terminationStatus == 0 {
+                    FileOperations.registerCreation(of: destURL, actionName: L10n.compressToZip)
+                } else {
                     NSLog("ZIP compression failed (exit code: \(proc.terminationStatus))")
                 }
                 self?.reload()
@@ -136,7 +147,7 @@ final class FileExplorerViewModel {
         guard !trimmed.isEmpty, trimmed != item.name else { return }
         let dest = item.url.deletingLastPathComponent().appendingPathComponent(trimmed)
         do {
-            try FileManager.default.moveItem(at: item.url, to: dest)
+            try FileOperations.move(from: item.url, to: dest, actionName: L10n.rename)
         } catch {
             let alert = NSAlert()
             alert.messageText = L10n.renameFailed
@@ -160,12 +171,12 @@ final class FileExplorerViewModel {
         panel.prompt = L10n.moveHere
         panel.message = L10n.chooseMoveDestination(name: item.name)
         guard panel.runModal() == .OK, let dest = panel.url else { return }
-        try? FileManager.default.moveItem(at: item.url, to: dest.appendingPathComponent(item.name))
+        try? FileOperations.move(from: item.url, to: dest.appendingPathComponent(item.name), actionName: L10n.move)
         reload()
     }
 
     func trashItem(_ item: FileItem) {
-        try? FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
+        try? FileOperations.trash(item.url)
         reload()
     }
 
@@ -179,7 +190,7 @@ final class FileExplorerViewModel {
             newURL = currentURL.appendingPathComponent(name)
             counter += 1
         }
-        try? FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
+        try? FileOperations.createDirectory(at: newURL)
         reload()
     }
 
@@ -187,7 +198,7 @@ final class FileExplorerViewModel {
         guard source != destFolder,
               !destFolder.path.hasPrefix(source.path + "/") else { return }
         let dest = destFolder.appendingPathComponent(source.lastPathComponent)
-        try? FileManager.default.moveItem(at: source, to: dest)
+        try? FileOperations.move(from: source, to: dest, actionName: L10n.move)
         reload()
     }
 
@@ -195,7 +206,7 @@ final class FileExplorerViewModel {
         guard source != destFolder,
               !destFolder.path.hasPrefix(source.path + "/") else { return }
         let dest = destFolder.appendingPathComponent(source.lastPathComponent)
-        try? FileManager.default.copyItem(at: source, to: dest)
+        try? FileOperations.copy(from: source, to: dest)
         if destFolder == currentURL { reload() }
     }
 }
@@ -204,10 +215,39 @@ final class FileExplorerViewModel {
 
 @Observable
 final class AppState {
-    var tabs: [FileExplorerViewModel] = [FileExplorerViewModel()]
-    var selectedIndex: Int = 0
+    var tabs: [FileExplorerViewModel]
+    var selectedIndex: Int
 
     var currentTab: FileExplorerViewModel { tabs[selectedIndex] }
+
+    // 前回終了時のタブを復元するのは起動直後の最初のウインドウだけ。⌘N で開く追加のウインドウはホームから始める
+    private static var hasRestoredSession = false
+
+    init() {
+        let restored = Self.hasRestoredSession ? nil : SavedSession.load()
+        Self.hasRestoredSession = true
+        // 前回から消えた・移動されたフォルダのタブは開かない
+        let urls = (restored?.paths ?? [])
+            .map { URL(fileURLWithPath: $0) }
+            .filter { url in
+                var isDir: ObjCBool = false
+                return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+            }
+        if let restored, !urls.isEmpty {
+            tabs = urls.map { FileExplorerViewModel(url: $0) }
+            let selectedPath = restored.paths.indices.contains(restored.selectedIndex)
+                ? restored.paths[restored.selectedIndex] : nil
+            selectedIndex = urls.firstIndex { $0.path == selectedPath } ?? 0
+        } else {
+            tabs = [FileExplorerViewModel()]
+            selectedIndex = 0
+        }
+    }
+
+    // 保存対象（タブごとの表示中フォルダと選択中のタブ）。ContentView が変化を監視して保存する
+    var session: SavedSession {
+        SavedSession(paths: tabs.map(\.currentURL.path), selectedIndex: selectedIndex)
+    }
 
     func addTab() {
         tabs.append(FileExplorerViewModel())
@@ -248,6 +288,26 @@ final class AppState {
     }
 }
 
+// MARK: - Session (Tab Restoration)
+
+// ウインドウが複数あるときは、最後に操作したウインドウのタブが保存される
+struct SavedSession: Codable, Equatable {
+    private static let udKey = "Vela.session.v1"
+
+    var paths: [String]
+    var selectedIndex: Int
+
+    static func load() -> SavedSession? {
+        guard let data = UserDefaults.standard.data(forKey: udKey) else { return nil }
+        return try? JSONDecoder().decode(SavedSession.self, from: data)
+    }
+
+    func save() {
+        guard let data = try? JSONEncoder().encode(self) else { return }
+        UserDefaults.standard.set(data, forKey: Self.udKey)
+    }
+}
+
 // MARK: - Content View
 
 struct ContentView: View {
@@ -279,6 +339,7 @@ struct ContentView: View {
             StatusBarView(viewModel: appState.currentTab)
         }
         .background { tabShortcuts }
+        .onChange(of: appState.session) { _, session in session.save() }
         .frame(minWidth: 800, minHeight: 520)
         .navigationTitle(appState.currentTab.tabTitle)
         // ⌘T / ⌘W のメニューコマンド（VelaApp の TabCommands）から参照する

@@ -122,6 +122,7 @@ final class FileTableCoordinator: NSObject {
         tableView.onPaste      = { [weak self] in self?.handlePaste() }
         tableView.onCmdShiftN  = { [weak self] in self?.viewModel?.createFolder() }
         tableView.onMiddleClick = { [weak self] row in self?.handleMiddleClick(row: row) }
+        tableView.onUndoRedo   = { [weak self] in self?.viewModel?.reload() }
 
         let menu = NSMenu()
         menu.delegate = self
@@ -134,7 +135,20 @@ final class FileTableCoordinator: NSObject {
     // MARK: - Data Update
 
     func reloadIfNeeded(newItems: [FileItem]) {
-        guard newItems.map(\.id) != items.map(\.id) else { return }
+        // 項目の並びが同じなら、サイズや更新日が変わった行だけを描き直す（フォルダ監視による再読み込み向け）
+        guard newItems.map(\.id) != items.map(\.id) else {
+            let changedRows = IndexSet(newItems.indices.filter {
+                newItems[$0].size != items[$0].size || newItems[$0].modifiedDate != items[$0].modifiedDate
+            })
+            items = newItems
+            if !changedRows.isEmpty {
+                tableView.reloadData(forRowIndexes: changedRows,
+                                     columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns))
+                // 選択中の項目の合計サイズ（ステータスバー）も最新の値にする
+                viewModel?.selectedItems = tableView.selectedRowIndexes.compactMap { $0 < items.count ? items[$0] : nil }
+            }
+            return
+        }
         let selectedURLs = Set(tableView.selectedRowIndexes.compactMap {
             $0 < items.count ? items[$0].id : nil
         })
@@ -360,6 +374,15 @@ extension FileTableCoordinator: NSTableViewDelegate {
         }
     }
 
+    // 頭文字ジャンプ（type-to-select）。ビューベースの NSTableView は、この照合用の文字列を
+    // 返さないと文字キーを打っても行が選ばれない
+    func tableView(_ tableView: NSTableView,
+                   typeSelectStringFor tableColumn: NSTableColumn?,
+                   row: Int) -> String? {
+        guard row < items.count, tableColumn == nil || tableColumn?.identifier == nameID else { return nil }
+        return items[row].name
+    }
+
     func tableViewSelectionDidChange(_ notification: Notification) {
         let selected = tableView.selectedRowIndexes.compactMap { $0 < items.count ? items[$0] : nil }
         viewModel?.selectedItems = selected
@@ -541,6 +564,7 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
     var onPaste:     (() -> Void)?
     var onCmdShiftN: (() -> Void)?
     var onMiddleClick: ((Int) -> Void)?
+    var onUndoRedo:  (() -> Void)?
     var quickLookURL: URL?
 
     override func otherMouseDown(with event: NSEvent) {
@@ -592,8 +616,29 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
     @objc func copy(_ sender: Any?) { onCopy?() }
     @objc func paste(_ sender: Any?) { onPaste?() }
 
+    // ⌘Z / ⇧⌘Z も ⌘C / ⌘V と同じく Edit メニュー経由で受け取る。パス欄や検索欄の編集中は
+    // そちらが first responder になり、文字入力の取り消しが優先される
+    @objc func undo(_ sender: Any?) {
+        FileOperations.undoManager.undo()
+        onUndoRedo?()
+    }
+
+    @objc func redo(_ sender: Any?) {
+        FileOperations.undoManager.redo()
+        onUndoRedo?()
+    }
+
     override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        let undoManager = FileOperations.undoManager
         switch item.action {
+        case #selector(undo(_:)):
+            (item as? NSMenuItem)?.title = undoManager.canUndo
+                ? L10n.undoAction(undoManager.undoActionName) : L10n.undo
+            return undoManager.canUndo
+        case #selector(redo(_:)):
+            (item as? NSMenuItem)?.title = undoManager.canRedo
+                ? L10n.redoAction(undoManager.redoActionName) : L10n.redo
+            return undoManager.canRedo
         case #selector(copy(_:)):
             return !selectedRowIndexes.isEmpty
         case #selector(paste(_:)):
