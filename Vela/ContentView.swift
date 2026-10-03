@@ -25,8 +25,8 @@ final class FileExplorerViewModel {
     var canGoUp: Bool      { currentURL.pathComponents.count > 1 }
     var tabTitle: String   { currentURL.lastPathComponent.isEmpty ? "/" : currentURL.lastPathComponent }
 
-    init() {
-        self.currentURL = FileManager.default.homeDirectoryForCurrentUser
+    init(url: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        self.currentURL = url
         reload()
     }
 
@@ -214,6 +214,11 @@ final class AppState {
         selectedIndex = tabs.count - 1
     }
 
+    // ホイールクリック用。ブラウザのバックグラウンドタブと同様に、表示中のタブは切り替えずに末尾へ追加する
+    func openInNewTab(_ url: URL) {
+        tabs.append(FileExplorerViewModel(url: url))
+    }
+
     func closeTab(at index: Int) {
         // 残り1タブを閉じるのはウインドウを閉じる操作に相当するため、アプリを終了する
         guard tabs.count > 1 else {
@@ -241,14 +246,19 @@ struct ContentView: View {
             ToolbarView(viewModel: appState.currentTab)
             Divider()
             NavigationSplitView {
-                SidebarView(viewModel: appState.currentTab, favoritesStore: favoritesStore)
+                SidebarView(
+                    viewModel: appState.currentTab,
+                    favoritesStore: favoritesStore,
+                    onOpenInNewTab: { appState.openInNewTab($0) }
+                )
                     .navigationSplitViewColumnWidth(min: 150, ideal: 200)
             } detail: {
                 FileListView(
                     viewModel: appState.currentTab,
                     onAddToFavorites: { item in
                         favoritesStore.add(name: item.name, url: item.url)
-                    }
+                    },
+                    onOpenInNewTab: { appState.openInNewTab($0) }
                 )
                 .id(appState.currentTab.id)
             }

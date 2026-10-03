@@ -11,6 +11,7 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 
 ### Navigation
 - **Tabs** — Open multiple directories at once (`Cmd+T` for a new tab, `Cmd+W` to close a tab, `Cmd+Shift+W` to close the window). Arrow buttons appear when tabs overflow the tab bar
+- **Open in New Tab** — Middle-click (wheel click) a folder in the file list or sidebar favorites to open it in a new background tab
 - **Address Bar** — Click breadcrumbs to jump to any parent directory, or click to type a path directly (`Cmd+C` / `Cmd+V` work while editing)
 - **Back / Forward / Up** — Toolbar buttons or keyboard (`Cmd+↑` to go up, `Cmd+↓` to open)
 - **Toggle Hidden Files** — Toolbar icon or `Cmd+Shift+.`

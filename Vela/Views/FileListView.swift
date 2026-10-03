@@ -10,6 +10,7 @@ import SwiftUI
 struct FileListView: View {
     var viewModel: FileExplorerViewModel
     var onAddToFavorites: ((FileItem) -> Void)?
+    var onOpenInNewTab: ((URL) -> Void)?
 
     @State private var sortState = FileSortState.default
 
@@ -39,7 +40,8 @@ struct FileListView: View {
                 sortState: sortState,
                 language: LanguageSettings.shared.language,
                 onSortChange: { sortState = $0 },
-                onAddToFavorites: onAddToFavorites
+                onAddToFavorites: onAddToFavorites,
+                onOpenInNewTab: onOpenInNewTab
             )
 
             if !viewModel.searchText.isEmpty {

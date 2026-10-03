@@ -12,6 +12,7 @@ import AppKit
 struct SidebarView: View {
     var viewModel: FileExplorerViewModel
     @Bindable var favoritesStore: FavoritesStore
+    var onOpenInNewTab: ((URL) -> Void)?
     @State private var dropTargetURL: URL? = nil
 
     var body: some View {
@@ -28,6 +29,7 @@ struct SidebarView: View {
                                 : nil
                         )
                         .onTapGesture { viewModel.navigate(to: item.url) }
+                        .overlay { MiddleClickCatcher { onOpenInNewTab?(item.url) } }
                         .onDrop(
                             of: [.fileURL],
                             isTargeted: Binding(
@@ -60,5 +62,33 @@ struct SidebarView: View {
             }
         }
         return true
+    }
+}
+
+// SwiftUI にはホイール（中ボタン）クリックを受け取るジェスチャがないため、AppKit のビューを重ねて拾う
+private struct MiddleClickCatcher: NSViewRepresentable {
+    var action: () -> Void
+
+    func makeNSView(context: Context) -> CatcherView { CatcherView() }
+    func updateNSView(_ view: CatcherView, context: Context) { view.action = action }
+
+    final class CatcherView: NSView {
+        var action: (() -> Void)?
+
+        // 中ボタンのクリック以外はヒットテストを素通りさせ、下にある行のタップ・ドラッグ・右クリックを妨げない
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            switch NSApp.currentEvent?.type {
+            case .otherMouseDown, .otherMouseUp, .otherMouseDragged:
+                return super.hitTest(point)
+            default:
+                return nil
+            }
+        }
+
+        override func otherMouseDown(with event: NSEvent) {
+            // buttonNumber 2 = ホイール（中ボタン）
+            guard event.buttonNumber == 2 else { return super.otherMouseDown(with: event) }
+            action?()
+        }
     }
 }
