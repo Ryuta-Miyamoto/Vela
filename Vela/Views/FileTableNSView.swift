@@ -27,7 +27,8 @@ struct FileTableNSView: NSViewRepresentable {
     // 表示言語の変更時に updateNSView を走らせ、列見出しを差し替えるために受け取る
     var language: AppLanguage
     var onSortChange: (FileSortState) -> Void
-    var onAddToFavorites: ((FileItem) -> Void)?
+    var favoriteGroups: (() -> [FavoriteGroup])?
+    var onAddToFavorites: ((FileItem, UUID) -> Void)?
     var onOpenInNewTab: ((URL) -> Void)?
 
     func makeCoordinator() -> FileTableCoordinator { FileTableCoordinator() }
@@ -45,6 +46,7 @@ struct FileTableNSView: NSViewRepresentable {
         let c = context.coordinator
         c.viewModel = viewModel
         c.onSortChange = onSortChange
+        c.favoriteGroups = favoriteGroups
         c.onAddToFavorites = onAddToFavorites
         c.onOpenInNewTab = onOpenInNewTab
         c.reloadIfNeeded(newItems: items)
@@ -60,7 +62,9 @@ final class FileTableCoordinator: NSObject {
     var items: [FileItem] = []
     var viewModel: FileExplorerViewModel?
     var onSortChange: ((FileSortState) -> Void)?
-    var onAddToFavorites: ((FileItem) -> Void)?
+    // 右クリックメニューを開くたびに最新のグループ一覧を取り出す
+    var favoriteGroups: (() -> [FavoriteGroup])?
+    var onAddToFavorites: ((FileItem, UUID) -> Void)?
     var onOpenInNewTab: ((URL) -> Void)?
 
     private var currentSortState = FileSortState(key: "", ascending: true)
@@ -502,7 +506,7 @@ extension FileTableCoordinator: NSMenuDelegate {
             addMenuItem(to: menu, title: L10n.compressToZip, action: #selector(menuCompressItem))
             if item.isDirectory {
                 menu.addItem(.separator())
-                addMenuItem(to: menu, title: L10n.addToFavorites, action: #selector(menuAddToFavorites))
+                addFavoritesMenuItem(to: menu)
             }
             menu.addItem(.separator())
             addMenuItem(to: menu, title: L10n.properties, action: #selector(menuPropertiesItem))
@@ -645,10 +649,28 @@ extension FileTableCoordinator: NSMenuDelegate {
         viewModel?.compressToZip(items[row])
     }
 
-    @objc private func menuAddToFavorites() {
+    // グループが 1 つなら直接追加し、複数あるときは追加先をサブメニューで選ぶ
+    private func addFavoritesMenuItem(to menu: NSMenu) {
+        let groups = favoriteGroups?() ?? []
+        guard groups.count > 1 else {
+            addMenuItem(to: menu, title: L10n.addToFavorites, action: #selector(menuAddToFavorites(_:)))
+                .representedObject = groups.first?.id
+            return
+        }
+        let submenu = NSMenu()
+        for group in groups {
+            addMenuItem(to: submenu, title: group.displayName, action: #selector(menuAddToFavorites(_:)))
+                .representedObject = group.id
+        }
+        let parent = NSMenuItem(title: L10n.addToFavorites, action: nil, keyEquivalent: "")
+        parent.submenu = submenu
+        menu.addItem(parent)
+    }
+
+    @objc private func menuAddToFavorites(_ sender: NSMenuItem) {
         let row = tableView.clickedRow
-        guard row >= 0, row < items.count else { return }
-        onAddToFavorites?(items[row])
+        guard row >= 0, row < items.count, let groupID = sender.representedObject as? UUID else { return }
+        onAddToFavorites?(items[row], groupID)
     }
 
     @objc private func menuShareItem() {
