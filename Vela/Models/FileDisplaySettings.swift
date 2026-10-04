@@ -12,12 +12,19 @@ import Foundation
 final class FileDisplaySettings {
     static let shared = FileDisplaySettings()
     private static let showHiddenFilesKey = "Vela.showHiddenFiles"
+    private static let searchIncludesSubfoldersKey = "Vela.searchIncludesSubfolders"
 
     var showHiddenFiles: Bool {
         didSet { UserDefaults.standard.set(showHiddenFiles, forKey: Self.showHiddenFilesKey) }
     }
 
+    // Search scope: only the current folder (filtering the list) or everything below it too
+    var searchIncludesSubfolders: Bool {
+        didSet { UserDefaults.standard.set(searchIncludesSubfolders, forKey: Self.searchIncludesSubfoldersKey) }
+    }
+
     private init() {
         showHiddenFiles = UserDefaults.standard.bool(forKey: Self.showHiddenFilesKey)
+        searchIncludesSubfolders = UserDefaults.standard.bool(forKey: Self.searchIncludesSubfoldersKey)
     }
 }

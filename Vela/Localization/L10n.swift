@@ -80,6 +80,10 @@ enum L10n {
     // MARK: Toolbar
     static var enterPath: String       { tr("Enter Path", "パスを入力") }
     static var search: String          { tr("Search", "検索") }
+    static var searchSubfoldersPlaceholder: String { tr("Search Subfolders", "サブフォルダも検索") }
+    static var searchThisFolder: String         { tr("This Folder", "このフォルダ") }
+    static var searchIncludingSubfolders: String { tr("This Folder and Subfolders", "このフォルダとサブフォルダ") }
+    static var searchScopeHelp: String          { tr("Search Scope", "検索範囲") }
     static var showHiddenFiles: String { tr("Show Hidden Files", "隠しファイルを表示") }
     static var hideHiddenFiles: String { tr("Hide Hidden Files", "隠しファイルを非表示") }
 
@@ -129,8 +133,16 @@ enum L10n {
     static var columnDateCreated: String  { tr("Date Created", "作成日") }
     static var columnKind: String         { tr("Kind", "種類") }
 
+    static var columnLocation: String     { tr("Location", "場所") }
+
     static func searchResult(query: String, count: Int) -> String {
         tr("\"\(query)\": \(count) \(count == 1 ? "item" : "items")", "「\(query)」: \(count) 件")
+    }
+
+    static var searchingSubfolders: String { tr("Searching subfolders…", "サブフォルダを検索中…") }
+
+    static func searchLimitReached(_ limit: Int) -> String {
+        tr("Showing the first \(limit) results", "最初の\(limit)件を表示しています")
     }
 
     // MARK: Status Bar

@@ -16,13 +16,27 @@ final class FileExplorerViewModel {
         didSet { startWatching() }
     }
     var items: [FileItem] = []
-    var searchText: String = ""
+    var searchText: String = "" {
+        didSet { if searchText != oldValue { scheduleSearch() } }
+    }
     var selectedItems: [FileItem] = []
+
+    // Results of a search that includes subfolders (a search in the current folder just filters items)
+    private(set) var searchResults: [FileItem] = []
+    private(set) var isSearching = false
+    private(set) var searchReachedLimit = false
 
     private var backStack: [URL] = []
     private var forwardStack: [URL] = []
     // 他のアプリでの変更も一覧に反映するため、表示中のディレクトリを監視する（背面のタブも含む）
     @ObservationIgnored private var watcher: DirectoryWatcher?
+    @ObservationIgnored private var search: SubfolderSearch?
+    @ObservationIgnored private var searchDebounce: DispatchWorkItem?
+
+    var trimmedSearchText: String { searchText.trimmingCharacters(in: .whitespaces) }
+    var isSubfolderSearchActive: Bool {
+        FileDisplaySettings.shared.searchIncludesSubfolders && !trimmedSearchText.isEmpty
+    }
 
     var canGoBack: Bool    { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
@@ -77,8 +91,59 @@ final class FileExplorerViewModel {
         navigate(to: FileManager.default.homeDirectoryForCurrentUser)
     }
 
+    deinit { search?.cancel() }
+
     func reload() {
         items = FileService.shared.contents(of: currentURL, includeHidden: FileDisplaySettings.shared.showHiddenFiles)
+        // Re-running a deep search on every change would be too slow, so only drop results that are gone
+        // (trashed, moved away)
+        if !searchResults.isEmpty {
+            let remaining = searchResults.filter { FileManager.default.fileExists(atPath: $0.url.path) }
+            if remaining.count != searchResults.count { searchResults = remaining }
+        }
+    }
+
+    // MARK: - Subfolder Search
+
+    // Restarts the search, e.g. after the scope or the hidden files setting changed
+    func refreshSearch() {
+        searchDebounce?.cancel()
+        startSearch()
+    }
+
+    private func scheduleSearch() {
+        searchDebounce?.cancel()
+        guard isSubfolderSearchActive else { return startSearch() }
+        // Wait until typing pauses so every keystroke doesn't start a new walk of the folder tree
+        let work = DispatchWorkItem { [weak self] in self?.startSearch() }
+        searchDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    private func startSearch() {
+        search?.cancel()
+        search = nil
+        searchResults = []
+        searchReachedLimit = false
+        guard isSubfolderSearchActive else {
+            isSearching = false
+            return
+        }
+        isSearching = true
+        let task = SubfolderSearch()
+        search = task
+        task.start(root: currentURL, query: trimmedSearchText,
+                   includeHidden: FileDisplaySettings.shared.showHiddenFiles,
+                   onBatch: { [weak self] batch in
+                       guard let self, self.search === task else { return }
+                       self.searchResults.append(contentsOf: batch)
+                   },
+                   onFinish: { [weak self] reachedLimit in
+                       guard let self, self.search === task else { return }
+                       self.isSearching = false
+                       self.searchReachedLimit = reachedLimit
+                       self.search = nil
+                   })
     }
 
     // MARK: - File Operations
@@ -151,6 +216,10 @@ final class FileExplorerViewModel {
         let dest = item.url.deletingLastPathComponent().appendingPathComponent(trimmed)
         do {
             try FileOperations.move(from: item.url, to: dest, actionName: L10n.rename)
+            // Keep a renamed search result in the list under its new name
+            if let index = searchResults.firstIndex(of: item), let renamed = FileService.item(at: dest) {
+                searchResults[index] = renamed
+            }
         } catch {
             let alert = NSAlert()
             alert.messageText = L10n.renameFailed
@@ -396,7 +465,14 @@ struct ContentView: View {
         .onChange(of: appState.session) { _, session in session.save() }
         // 隠しファイルの表示設定は全タブ共通のため、背面のタブも含めて読み込み直す
         .onChange(of: FileDisplaySettings.shared.showHiddenFiles) { _, _ in
-            appState.tabs.forEach { $0.reload() }
+            appState.tabs.forEach {
+                $0.reload()
+                if $0.isSubfolderSearchActive { $0.refreshSearch() }
+            }
+        }
+        // The search scope is shared too; tabs with a query switch between filtering and searching subfolders
+        .onChange(of: FileDisplaySettings.shared.searchIncludesSubfolders) { _, _ in
+            appState.tabs.forEach { $0.refreshSearch() }
         }
         // A tab showing a folder on a volume that was just ejected would be left on a missing folder
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { notification in

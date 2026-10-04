@@ -7,7 +7,8 @@
 
 import Foundation
 
-struct FileItem: Identifiable, Equatable, Hashable {
+// Nonisolated so the subfolder search can build items on its background queue
+nonisolated struct FileItem: Identifiable, Equatable, Hashable, Sendable {
     // URL を ID にすることで、リロード後も同じファイルが同じ Identity を持つ。
     // UUID だと毎回新規行と判定されて全行再描画が発生する。
     var id: URL { url }

@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ToolbarView: View {
     @Bindable var viewModel: FileExplorerViewModel
+    @Bindable private var displaySettings = FileDisplaySettings.shared
 
     @State private var isEditing = false
     @State private var editingPath = ""
@@ -122,11 +123,27 @@ struct ToolbarView: View {
 
     private var searchField: some View {
         HStack(spacing: 4) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .font(.caption)
+            // Like Finder's search scope: this folder only, or this folder and its subfolders
+            Menu {
+                Picker(selection: $displaySettings.searchIncludesSubfolders) {
+                    Text(L10n.searchThisFolder).tag(false)
+                    Text(L10n.searchIncludingSubfolders).tag(true)
+                } label: {
+                    EmptyView()
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Image(systemName: displaySettings.searchIncludesSubfolders ? "magnifyingglass.circle.fill" : "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(L10n.searchScopeHelp)
 
-            TextField(L10n.search, text: $viewModel.searchText)
+            TextField(displaySettings.searchIncludesSubfolders ? L10n.searchSubfoldersPlaceholder : L10n.search,
+                      text: $viewModel.searchText)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .onKeyPress(.escape) {
@@ -148,7 +165,7 @@ struct ToolbarView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .frame(width: 180)
+        .frame(width: 200)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color(nsColor: .textBackgroundColor))

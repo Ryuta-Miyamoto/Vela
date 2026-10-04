@@ -26,6 +26,8 @@ struct FileTableNSView: NSViewRepresentable {
     var sortState: FileSortState
     // 表示言語の変更時に updateNSView を走らせ、列見出しを差し替えるために受け取る
     var language: AppLanguage
+    // Set while showing results from subfolders: shows the Location column, relative to this folder
+    var locationRoot: URL?
     var onSortChange: (FileSortState) -> Void
     var favoriteGroups: (() -> [FavoriteGroup])?
     var onAddToFavorites: ((FileItem, UUID) -> Void)?
@@ -49,6 +51,7 @@ struct FileTableNSView: NSViewRepresentable {
         c.favoriteGroups = favoriteGroups
         c.onAddToFavorites = onAddToFavorites
         c.onOpenInNewTab = onOpenInNewTab
+        c.applyLocationRoot(locationRoot)
         c.reloadIfNeeded(newItems: items)
         c.applySortIndicator(sortState)
         c.applyLanguage(language)
@@ -82,6 +85,9 @@ final class FileTableCoordinator: NSObject {
     private let createdID = NSUserInterfaceItemIdentifier("created")
     private let sizeID    = NSUserInterfaceItemIdentifier("size")
     private let kindID    = NSUserInterfaceItemIdentifier("kind")
+    // Only shown for subfolder search results, so it isn't in the header menu
+    private let locationID = NSUserInterfaceItemIdentifier("location")
+    private var locationRoot: URL?
 
     // 列ヘッダーの右クリックで表示を切り替えられる列（名前列は常に表示）
     private var optionalColumnIDs: [NSUserInterfaceItemIdentifier] { [dateID, createdID, sizeID, kindID] }
@@ -107,6 +113,14 @@ final class FileTableCoordinator: NSObject {
         nameCol.minWidth = 160
         nameCol.sortDescriptorPrototype = NSSortDescriptor(key: "name", ascending: true)
         tableView.addTableColumn(nameCol)
+
+        let locationCol = NSTableColumn(identifier: locationID)
+        locationCol.width = 200
+        locationCol.minWidth = 80
+        locationCol.resizingMask = .userResizingMask
+        locationCol.sortDescriptorPrototype = NSSortDescriptor(key: "location", ascending: true)
+        locationCol.isHidden = true
+        tableView.addTableColumn(locationCol)
 
         let dateCol = NSTableColumn(identifier: dateID)
         dateCol.width = 180
@@ -203,6 +217,25 @@ final class FileTableCoordinator: NSObject {
         viewModel?.selectedItems = newSelection.compactMap { newItems[$0] }
     }
 
+    func applyLocationRoot(_ root: URL?) {
+        // The column's visibility is re-applied every time because column autosave may have restored it
+        tableView.tableColumn(withIdentifier: locationID)?.isHidden = root == nil
+        guard root != locationRoot else { return }
+        locationRoot = root
+        tableView.sizeLastColumnToFit()
+    }
+
+    // e.g. "Projects/Vela/Views" for a match in Views when searching from Projects
+    private func locationText(for item: FileItem) -> String {
+        guard let root = locationRoot else { return "" }
+        let rootPath = root.standardizedFileURL.path
+        let parentPath = item.url.deletingLastPathComponent().standardizedFileURL.path
+        let rootName = root.lastPathComponent.isEmpty ? "/" : root.lastPathComponent
+        guard parentPath.hasPrefix(rootPath), parentPath != rootPath else { return rootName }
+        let relative = parentPath.dropFirst(rootPath.count).drop { $0 == "/" }
+        return rootName == "/" ? "/" + relative : rootName + "/" + relative
+    }
+
     func applySortIndicator(_ state: FileSortState) {
         guard state != currentSortState else { return }
         currentSortState = state
@@ -214,6 +247,7 @@ final class FileTableCoordinator: NSObject {
         case "created": colID = createdID
         case "size":    colID = sizeID
         case "kind":    colID = kindID
+        case "location": colID = locationID
         default:     colID = nameID
         }
         tableView.sortDescriptors = [NSSortDescriptor(key: state.key, ascending: state.ascending)]
@@ -224,6 +258,7 @@ final class FileTableCoordinator: NSObject {
         guard language != currentLanguage else { return }
         currentLanguage = language
         tableView.tableColumn(withIdentifier: nameID)?.title = L10n.columnName
+        tableView.tableColumn(withIdentifier: locationID)?.title = L10n.columnLocation
         for id in optionalColumnIDs {
             tableView.tableColumn(withIdentifier: id)?.title = columnTitle(for: id)
         }
@@ -440,6 +475,9 @@ extension FileTableCoordinator: NSTableViewDelegate {
 
         case kindID:
             return labelCell(for: kindID, text: item.kind)
+
+        case locationID:
+            return labelCell(for: locationID, text: locationText(for: item))
 
         default:
             return nil
