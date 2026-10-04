@@ -22,6 +22,8 @@ struct FileItem: Identifiable, Equatable, Hashable {
     let isDirectory: Bool
     // .app や .bundle など、Finder 上では単一ファイルとして扱われるディレクトリ
     let isPackage: Bool
+    // ドットファイルや隠しフラグの付いた項目。隠しファイル表示中は一覧で薄く表示する
+    let isHidden: Bool
 
     // id ベースの比較で SwiftUI の差分計算コストを最小化
     static func == (lhs: FileItem, rhs: FileItem) -> Bool { lhs.url == rhs.url }

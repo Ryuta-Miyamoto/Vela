@@ -411,7 +411,13 @@ extension FileTableCoordinator: NSTableViewDelegate {
                    row: Int) -> NSView? {
         guard row < items.count else { return nil }
         let item = items[row]
+        let cell = cellView(for: item, column: tableColumn)
+        // Finder と同様に、隠しファイルは行全体を薄く表示する
+        cell?.alphaValue = item.isHidden ? 0.5 : 1
+        return cell
+    }
 
+    private func cellView(for item: FileItem, column tableColumn: NSTableColumn?) -> NSView? {
         switch tableColumn?.identifier {
         case nameID:
             let cell = (tableView.makeView(withIdentifier: nameID, owner: nil) as? FileNameCellView)

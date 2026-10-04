@@ -61,11 +61,11 @@ struct ToolbarView: View {
 
             Divider().frame(height: 18)
 
-            Button { viewModel.toggleHiddenFiles() } label: {
-                Image(systemName: viewModel.showHiddenFiles ? "eye" : "eye.slash")
+            // ⌘⇧. はメニューバーの表示メニュー（VelaApp の ViewCommands）に割り当てている
+            Button { FileDisplaySettings.shared.showHiddenFiles.toggle() } label: {
+                Image(systemName: FileDisplaySettings.shared.showHiddenFiles ? "eye" : "eye.slash")
             }
-            .help(viewModel.showHiddenFiles ? L10n.hideHiddenFiles : L10n.showHiddenFiles)
-            .keyboardShortcut(".", modifiers: [.command, .shift])
+            .help(FileDisplaySettings.shared.showHiddenFiles ? L10n.hideHiddenFiles : L10n.showHiddenFiles)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
