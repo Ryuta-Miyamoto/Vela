@@ -15,7 +15,23 @@ struct VelaApp: App {
         }
         .commands {
             TabCommands()
+            ViewCommands()
             LanguageCommands()
+        }
+    }
+}
+
+// 表示メニュー。隠しファイルの切り替えは Finder と同じ ⌘⇧. に割り当てる
+private struct ViewCommands: Commands {
+    @Bindable private var settings = FileDisplaySettings.shared
+
+    var body: some Commands {
+        CommandGroup(before: .toolbar) {
+            Button(settings.showHiddenFiles ? L10n.hideHiddenFiles : L10n.showHiddenFiles) {
+                settings.showHiddenFiles.toggle()
+            }
+            .keyboardShortcut(".", modifiers: [.command, .shift])
+            Divider()
         }
     }
 }

@@ -15,7 +15,6 @@ final class FileExplorerViewModel {
         didSet { startWatching() }
     }
     var items: [FileItem] = []
-    var showHiddenFiles: Bool = false
     var searchText: String = ""
     var selectedItems: [FileItem] = []
 
@@ -69,13 +68,8 @@ final class FileExplorerViewModel {
         navigate(to: parent)
     }
 
-    func toggleHiddenFiles() {
-        showHiddenFiles.toggle()
-        reload()
-    }
-
     func reload() {
-        items = FileService.shared.contents(of: currentURL, includeHidden: showHiddenFiles)
+        items = FileService.shared.contents(of: currentURL, includeHidden: FileDisplaySettings.shared.showHiddenFiles)
     }
 
     // MARK: - File Operations
@@ -402,6 +396,10 @@ struct ContentView: View {
         }
         .background { tabShortcuts }
         .onChange(of: appState.session) { _, session in session.save() }
+        // 隠しファイルの表示設定は全タブ共通のため、背面のタブも含めて読み込み直す
+        .onChange(of: FileDisplaySettings.shared.showHiddenFiles) { _, _ in
+            appState.tabs.forEach { $0.reload() }
+        }
         .frame(minWidth: 800, minHeight: 520)
         .navigationTitle(appState.currentTab.tabTitle)
         // ⌘T / ⌘W のメニューコマンド（VelaApp の TabCommands）から参照する
