@@ -19,6 +19,13 @@ struct TabBarView: View {
     // ScrollView の表示領域幅が変動してちらつくのを防ぐ）
     private let scrollButtonWidth: CGFloat = 28
 
+    // ドラッグによるタブの並べ替え状態
+    @State private var drag: TabDrag?
+    @State private var tabWidths: [UUID: CGFloat] = [:]
+    @State private var autoScroller = TabAutoScroller()
+
+    private static let viewportSpace = "TabBarViewport"
+
     var body: some View {
         ScrollViewReader { proxy in
             HStack(spacing: 0) {
@@ -30,14 +37,25 @@ struct TabBarView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
                         ForEach(Array(appState.tabs.enumerated()), id: \.element.id) { index, tab in
-                            TabItemView(
-                                title: tab.tabTitle,
-                                isSelected: appState.selectedIndex == index,
-                                onSelect: { appState.selectedIndex = index },
-                                onClose: { appState.closeTab(at: index) }
-                            )
+                            // タブと右隣の区切り線をひとまとまりとして並べ替える
+                            HStack(spacing: 0) {
+                                TabItemView(
+                                    title: tab.tabTitle,
+                                    isSelected: appState.selectedIndex == index,
+                                    onSelect: { appState.selectedIndex = index },
+                                    onClose: { appState.closeTab(at: index) }
+                                )
+                                Divider().frame(height: 20)
+                            }
+                            .background {
+                                GeometryReader { geometry in
+                                    Color.clear.preference(key: TabWidthsKey.self, value: [tab.id: geometry.size.width])
+                                }
+                            }
+                            .offset(x: dragOffset(for: tab.id, at: index))
+                            .zIndex(drag?.tabID == tab.id ? 1 : 0)
+                            .gesture(reorderGesture(for: tab.id))
                             .id(tab.id)
-                            Divider().frame(height: 20)
                         }
 
                         Button(action: { appState.addTab() }) {
@@ -49,8 +67,11 @@ struct TabBarView: View {
                         .buttonStyle(.plain)
                         .help(L10n.newTabHelp)
                     }
+                    .background(ScrollViewAccessor { autoScroller.scrollView = $0 })
                 }
+                .coordinateSpace(name: Self.viewportSpace)
                 .trackScrollability(canScrollLeft: $canScrollLeft, canScrollRight: $canScrollRight)
+                .onPreferenceChange(TabWidthsKey.self) { tabWidths = $0 }
 
                 scrollButton(systemName: "chevron.right", help: L10n.scrollTabsRightHelp, isVisible: canScrollRight) {
                     guard let lastID = appState.tabs.last?.id else { return }
@@ -63,11 +84,85 @@ struct TabBarView: View {
             .background(VerticalToHorizontalScrollConverter())
             .overlay(alignment: .bottom) { Divider() }
             // ⌘T などで選択タブが変わったら、見切れていても見える位置までスクロールする
+            // （ドラッグ開始時の選択では、ポインタ下のタブがずれないようスクロールしない）
             .onChange(of: appState.selectedIndex) { _, newIndex in
-                guard appState.tabs.indices.contains(newIndex) else { return }
+                guard drag == nil, appState.tabs.indices.contains(newIndex) else { return }
                 withAnimation { proxy.scrollTo(appState.tabs[newIndex].id) }
             }
         }
+    }
+
+    // MARK: Drag to Reorder
+
+    // ドラッグ中のタブはポインタに追従させ、他のタブは挿入先を空けるようにずらして表示する。
+    // 配列の並べ替えはドロップ時に一度だけ行う
+    //
+    // ポインタ位置はスクロールしない表示領域の座標で受け取り、ドラッグ開始からのスクロール量を足して
+    // タブ列上の移動量に換算する。表示領域の端に近づくと自動スクロールする
+    private func reorderGesture(for tabID: UUID) -> some Gesture {
+        DragGesture(minimumDistance: 5, coordinateSpace: .named(Self.viewportSpace))
+            .onChanged { value in
+                guard let sourceIndex = appState.tabs.firstIndex(where: { $0.id == tabID }) else { return }
+                if drag == nil {
+                    drag = TabDrag(tabID: tabID, sourceIndex: sourceIndex, targetIndex: sourceIndex,
+                                   pointerTranslation: 0, startScrollX: autoScroller.scrollX, translation: 0)
+                    appState.selectedIndex = sourceIndex
+                }
+                drag?.pointerTranslation = value.translation.width
+                updateDrag()
+                autoScroller.update(pointerX: value.location.x) { updateDrag() }
+            }
+            .onEnded { _ in
+                autoScroller.stop()
+                guard let drag else { return }
+                // 配列の並べ替えとオフセットの解除を同じアニメーションで行うと、他のタブは見た目の位置を保ったまま、
+                // ドラッグ中のタブだけが挿入先へ収まる
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    appState.moveTab(from: drag.sourceIndex, to: drag.targetIndex)
+                    self.drag = nil
+                }
+            }
+    }
+
+    // ポインタの移動量とスクロール量から、ドラッグ中のタブの位置と挿入先を更新する
+    private func updateDrag() {
+        guard let current = drag else { return }
+        let width = tabWidths[current.tabID] ?? 0
+        let startMinX = layoutMinX(at: current.sourceIndex)
+        let scrolled = autoScroller.scrollX - current.startScrollX
+        // タブ列の外へははみ出さないようにする
+        let maxMinX = max(0, appState.tabs.reduce(0) { $0 + (tabWidths[$1.id] ?? 0) } - width)
+        let translation = min(max(startMinX + current.pointerTranslation + scrolled, 0), maxMinX) - startMinX
+        let targetIndex = targetIndex(forCenterX: startMinX + translation + width / 2, draggedIndex: current.sourceIndex)
+
+        drag?.translation = translation
+        if current.targetIndex != targetIndex {
+            withAnimation(.easeInOut(duration: 0.15)) { drag?.targetIndex = targetIndex }
+        }
+    }
+
+    private func dragOffset(for tabID: UUID, at index: Int) -> CGFloat {
+        guard let drag else { return 0 }
+        if drag.tabID == tabID { return drag.translation }
+        let draggedWidth = tabWidths[drag.tabID] ?? 0
+        if drag.sourceIndex < index && index <= drag.targetIndex { return -draggedWidth }
+        if drag.targetIndex <= index && index < drag.sourceIndex { return draggedWidth }
+        return 0
+    }
+
+    // 並べ替え前のレイアウトでの、index 番目のタブの左端
+    private func layoutMinX(at index: Int) -> CGFloat {
+        appState.tabs.prefix(index).reduce(0) { $0 + (tabWidths[$1.id] ?? 0) }
+    }
+
+    // ドラッグ中のタブの中心より左に中心がある他のタブの数が、移動後のインデックスになる
+    private func targetIndex(forCenterX centerX: CGFloat, draggedIndex: Int) -> Int {
+        var count = 0
+        for index in appState.tabs.indices where index != draggedIndex {
+            let width = tabWidths[appState.tabs[index].id] ?? 0
+            if layoutMinX(at: index) + width / 2 < centerX { count += 1 }
+        }
+        return count
     }
 
     private func scrollButton(systemName: String, help: String, isVisible: Bool, action: @escaping () -> Void) -> some View {
@@ -115,6 +210,105 @@ private extension View {
 private struct ScrollEdges: Equatable {
     var canScrollLeft: Bool
     var canScrollRight: Bool
+}
+
+private struct TabDrag {
+    let tabID: UUID
+    let sourceIndex: Int
+    var targetIndex: Int
+    // 表示領域上でのポインタの移動量
+    var pointerTranslation: CGFloat
+    // ドラッグ開始時のスクロール位置
+    let startScrollX: CGFloat
+    // タブ列上での移動量（ドラッグ中のタブのオフセット）
+    var translation: CGFloat
+}
+
+// MARK: - Auto Scroll While Dragging
+
+// ドラッグ中のポインタが表示領域の端に近づいたら、端からの近さに応じた速さでタブ列をスクロールし続ける
+private final class TabAutoScroller {
+    weak var scrollView: NSScrollView?
+
+    private var timer: Timer?
+    private var velocity: CGFloat = 0
+    private var onScroll: (() -> Void)?
+
+    // 端からこの幅の範囲に入るとスクロールを始める
+    private let edgeZone: CGFloat = 32
+    // 1フレームあたりの最大移動量
+    private let maxStep: CGFloat = 12
+
+    var scrollX: CGFloat { scrollView?.contentView.bounds.origin.x ?? 0 }
+
+    // pointerX は表示領域の左端を 0 とした座標
+    func update(pointerX: CGFloat, onScroll: @escaping () -> Void) {
+        guard let scrollView else { return }
+        let width = scrollView.contentView.bounds.width
+        if pointerX < edgeZone {
+            velocity = -maxStep * min(1, (edgeZone - pointerX) / edgeZone)
+        } else if pointerX > width - edgeZone {
+            velocity = maxStep * min(1, (pointerX - (width - edgeZone)) / edgeZone)
+        } else {
+            stop()
+            return
+        }
+        self.onScroll = onScroll
+        guard timer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.step() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        onScroll = nil
+    }
+
+    private func step() {
+        guard let scrollView, let documentView = scrollView.documentView else { return stop() }
+        let clipView = scrollView.contentView
+        let maxX = max(0, documentView.frame.width - clipView.bounds.width)
+        let newX = min(max(clipView.bounds.origin.x + velocity, 0), maxX)
+        guard newX != clipView.bounds.origin.x else { return }
+        clipView.scroll(to: NSPoint(x: newX, y: clipView.bounds.origin.y))
+        scrollView.reflectScrolledClipView(clipView)
+        onScroll?()
+    }
+}
+
+// 配置したビューを含む NSScrollView（SwiftUI の ScrollView の実体）を取得する
+private struct ScrollViewAccessor: NSViewRepresentable {
+    let onResolve: (NSScrollView?) -> Void
+
+    func makeNSView(context: Context) -> AccessorView {
+        let view = AccessorView()
+        view.onResolve = onResolve
+        return view
+    }
+
+    func updateNSView(_ nsView: AccessorView, context: Context) {}
+
+    final class AccessorView: NSView {
+        var onResolve: ((NSScrollView?) -> Void)?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            onResolve?(enclosingScrollView)
+        }
+    }
+}
+
+private struct TabWidthsKey: PreferenceKey {
+    static let defaultValue: [UUID: CGFloat] = [:]
+    static func reduce(value: inout [UUID: CGFloat], nextValue: () -> [UUID: CGFloat]) {
+        value.merge(nextValue()) { $1 }
+    }
 }
 
 // MARK: - Vertical → Horizontal Scroll

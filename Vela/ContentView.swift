@@ -334,6 +334,15 @@ final class AppState {
         selectedIndex = index
     }
 
+    // タブの並べ替え。destination は移動後の配列でのインデックス。選択中のタブは移動後も選択したままにする
+    func moveTab(from source: Int, to destination: Int) {
+        guard tabs.indices.contains(source), tabs.indices.contains(destination), source != destination else { return }
+        let selectedID = currentTab.id
+        let tab = tabs.remove(at: source)
+        tabs.insert(tab, at: destination)
+        selectedIndex = tabs.firstIndex { $0.id == selectedID } ?? 0
+    }
+
     func closeTab(at index: Int) {
         // 残り1タブを閉じるのはウインドウを閉じる操作に相当するため、アプリを終了する
         guard tabs.count > 1 else {
