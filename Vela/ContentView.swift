@@ -230,10 +230,21 @@ final class FileExplorerViewModel {
         reload()
     }
 
+    // Like Finder, puts the files and their paths on the clipboard: pasting in Vela or Finder copies the
+    // files, while pasting into a text field or Terminal inserts the paths (one per line)
     func copyItems(_ items: [FileItem]) {
         guard !items.isEmpty else { return }
+        let pasteboardItems = items.enumerated().map { index, item in
+            let pasteboardItem = NSPasteboardItem()
+            pasteboardItem.setString(item.url.absoluteString, forType: .fileURL)
+            // Apps reading plain text only look at the first item, so it carries every path
+            if index == 0 {
+                pasteboardItem.setString(items.map(\.url.path).joined(separator: "\n"), forType: .string)
+            }
+            return pasteboardItem
+        }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects(items.map { $0.url as NSURL })
+        NSPasteboard.general.writeObjects(pasteboardItems)
     }
 
     // Finder の ⌘D と同じく、同じフォルダに「<名前> copy」を作る
