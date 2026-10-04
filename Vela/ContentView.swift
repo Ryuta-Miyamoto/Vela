@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import Combine
 
 @Observable
 final class FileExplorerViewModel {
@@ -66,6 +67,14 @@ final class FileExplorerViewModel {
         let parent = currentURL.deletingLastPathComponent()
         guard parent != currentURL else { return }
         navigate(to: parent)
+    }
+
+    // Goes home if the current folder is on the given (unmounted) volume
+    func leaveIfInside(_ volumeURL: URL) {
+        let volumePath = volumeURL.standardizedFileURL.path
+        let path = currentURL.standardizedFileURL.path
+        guard path == volumePath || path.hasPrefix(volumePath + "/") else { return }
+        navigate(to: FileManager.default.homeDirectoryForCurrentUser)
     }
 
     func reload() {
@@ -388,6 +397,11 @@ struct ContentView: View {
         // 隠しファイルの表示設定は全タブ共通のため、背面のタブも含めて読み込み直す
         .onChange(of: FileDisplaySettings.shared.showHiddenFiles) { _, _ in
             appState.tabs.forEach { $0.reload() }
+        }
+        // A tab showing a folder on a volume that was just ejected would be left on a missing folder
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { notification in
+            guard let volumeURL = notification.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL else { return }
+            appState.tabs.forEach { $0.leaveIfInside(volumeURL) }
         }
         .frame(minWidth: 800, minHeight: 520)
         .navigationTitle(appState.currentTab.tabTitle)

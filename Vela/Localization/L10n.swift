@@ -105,7 +105,18 @@ enum L10n {
            "このグループの\(count)個のお気に入りも削除されます。フォルダ自体は削除されません。")
     }
 
-    static var favoriteHome: String         { tr("Home", "ホーム") }
+    static var locations: String { tr("Locations", "場所") }
+    static var eject: String     { tr("Eject", "取り出す") }
+
+    static func ejectVolume(name: String) -> String {
+        tr("Eject \"\(name)\"", "「\(name)」を取り出す")
+    }
+
+    static func ejectFailed(name: String) -> String {
+        tr("Couldn't eject \"\(name)\"", "「\(name)」を取り出せませんでした")
+    }
+
+    static var favoriteHome: String        { tr("Home", "ホーム") }
     static var favoriteDesktop: String      { tr("Desktop", "デスクトップ") }
     static var favoriteDocuments: String    { tr("Documents", "書類") }
     static var favoriteDownloads: String    { tr("Downloads", "ダウンロード") }
