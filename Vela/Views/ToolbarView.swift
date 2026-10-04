@@ -9,15 +9,14 @@ import SwiftUI
 
 struct ToolbarView: View {
     @Bindable var viewModel: FileExplorerViewModel
+    // In dual pane mode the address bars are in the panes, so the toolbar leaves it out
+    var showsAddressBar = true
+    var isDualPane = false
+    var onToggleDualPane: () -> Void = {}
+
     @Bindable private var displaySettings = FileDisplaySettings.shared
 
-    @State private var isEditing = false
-    @State private var editingPath = ""
-    @State private var hoveredIndex: Int? = nil
     @FocusState private var searchFocused: Bool
-    @FocusState private var pathFieldFocused: Bool
-
-    private var pathComponents: [String] { viewModel.currentURL.pathComponents }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -30,21 +29,11 @@ struct ToolbarView: View {
 
             Divider().frame(height: 18)
 
-            addressBar
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color(nsColor: .textBackgroundColor))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(isEditing ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
-                        )
-                )
-                .contextMenu {
-                    Button(L10n.openInTerminal) { viewModel.openInTerminal(viewModel.currentURL) }
-                }
+            if showsAddressBar {
+                AddressBarView(viewModel: viewModel)
+            } else {
+                Spacer()
+            }
 
             Button { viewModel.openInTerminal(viewModel.currentURL) } label: {
                 Image(systemName: "terminal")
@@ -67,58 +56,16 @@ struct ToolbarView: View {
                 Image(systemName: FileDisplaySettings.shared.showHiddenFiles ? "eye" : "eye.slash")
             }
             .help(FileDisplaySettings.shared.showHiddenFiles ? L10n.hideHiddenFiles : L10n.showHiddenFiles)
+
+            // ⌃⌘2 is assigned in the View menu (ViewCommands in VelaApp)
+            Button(action: onToggleDualPane) {
+                Image(systemName: isDualPane ? "rectangle.split.2x1.fill" : "rectangle.split.2x1")
+            }
+            .help(L10n.dualPaneHelp)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(.bar)
-        .onChange(of: viewModel.id) { _, _ in resetEditing() }
-        // タブ切り替えだけでなく、ファイル一覧のダブルクリックや戻る/進むなど
-        // 編集モード以外の経路でパスが変わった時も編集モードを抜ける
-        .onChange(of: viewModel.currentURL) { _, _ in resetEditing() }
-    }
-
-    private func resetEditing() {
-        isEditing = false
-        editingPath = ""
-    }
-
-    @ViewBuilder
-    private var addressBar: some View {
-        if isEditing {
-            TextField(L10n.enterPath, text: $editingPath)
-                .textFieldStyle(.plain)
-                .focused($pathFieldFocused)
-                // 編集モードに入ったらすぐ入力・コピー＆ペーストできるようフォーカスを移す
-                .onAppear { pathFieldFocused = true }
-                .onSubmit { commitEdit() }
-                .onExitCommand { isEditing = false }
-        } else {
-            HStack(spacing: 0) {
-                ForEach(Array(pathComponents.enumerated()), id: \.offset) { index, component in
-                    let isLast = index == pathComponents.count - 1
-                    Button {
-                        navigateTo(index: index)
-                    } label: {
-                        Text(component)
-                            .fontWeight(isLast ? .semibold : .regular)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(hoveredIndex == index ? Color.secondary.opacity(0.15) : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                    }
-                    .buttonStyle(.plain)
-                    .onHover { hoveredIndex = $0 ? index : nil }
-
-                    if !isLast {
-                        Text("›").foregroundStyle(.tertiary).padding(.horizontal, 2)
-                    }
-                }
-                Spacer()
-            }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .onTapGesture { enterEditMode() }
-        }
     }
 
     private var searchField: some View {
@@ -174,6 +121,87 @@ struct ToolbarView: View {
                         .stroke(searchFocused ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
                 )
         )
+    }
+}
+
+// MARK: - Address Bar
+
+// Breadcrumbs of the current folder; click a component to go there, or click the empty area to type a path.
+// Shown in the toolbar, or above each pane in dual pane mode
+struct AddressBarView: View {
+    var viewModel: FileExplorerViewModel
+
+    @State private var isEditing = false
+    @State private var editingPath = ""
+    @State private var hoveredIndex: Int? = nil
+    @FocusState private var pathFieldFocused: Bool
+
+    private var pathComponents: [String] { viewModel.currentURL.pathComponents }
+
+    var body: some View {
+        addressBar
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(nsColor: .textBackgroundColor))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(isEditing ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
+                    )
+            )
+            .contextMenu {
+                Button(L10n.openInTerminal) { viewModel.openInTerminal(viewModel.currentURL) }
+            }
+            .onChange(of: viewModel.id) { _, _ in resetEditing() }
+            // タブ切り替えだけでなく、ファイル一覧のダブルクリックや戻る/進むなど
+            // 編集モード以外の経路でパスが変わった時も編集モードを抜ける
+            .onChange(of: viewModel.currentURL) { _, _ in resetEditing() }
+    }
+
+    private func resetEditing() {
+        isEditing = false
+        editingPath = ""
+    }
+
+    @ViewBuilder
+    private var addressBar: some View {
+        if isEditing {
+            TextField(L10n.enterPath, text: $editingPath)
+                .textFieldStyle(.plain)
+                .focused($pathFieldFocused)
+                // 編集モードに入ったらすぐ入力・コピー＆ペーストできるようフォーカスを移す
+                .onAppear { pathFieldFocused = true }
+                .onSubmit { commitEdit() }
+                .onExitCommand { isEditing = false }
+        } else {
+            HStack(spacing: 0) {
+                ForEach(Array(pathComponents.enumerated()), id: \.offset) { index, component in
+                    let isLast = index == pathComponents.count - 1
+                    Button {
+                        navigateTo(index: index)
+                    } label: {
+                        Text(component)
+                            .fontWeight(isLast ? .semibold : .regular)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(hoveredIndex == index ? Color.secondary.opacity(0.15) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hoveredIndex = $0 ? index : nil }
+
+                    if !isLast {
+                        Text("›").foregroundStyle(.tertiary).padding(.horizontal, 2)
+                    }
+                }
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture { enterEditMode() }
+        }
     }
 
     private func enterEditMode() {

@@ -12,6 +12,11 @@ struct FileListView: View {
     var favoriteGroups: (() -> [FavoriteGroup])?
     var onAddToFavorites: ((FileItem, UUID) -> Void)?
     var onOpenInNewTab: ((URL) -> Void)?
+    // Dual pane mode
+    var isActivePane = true
+    var otherPaneURL: URL?
+    var onActivate: (() -> Void)?
+    var onSwitchPane: (() -> Void)?
 
     @State private var sortState = FileSortState.default
 
@@ -54,7 +59,11 @@ struct FileListView: View {
                 onSortChange: { sortState = $0 },
                 favoriteGroups: favoriteGroups,
                 onAddToFavorites: onAddToFavorites,
-                onOpenInNewTab: onOpenInNewTab
+                onOpenInNewTab: onOpenInNewTab,
+                isActivePane: isActivePane,
+                otherPaneURL: otherPaneURL,
+                onActivate: onActivate,
+                onSwitchPane: onSwitchPane
             )
 
             if !viewModel.searchText.isEmpty {

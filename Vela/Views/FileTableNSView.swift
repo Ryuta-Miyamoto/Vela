@@ -32,6 +32,12 @@ struct FileTableNSView: NSViewRepresentable {
     var favoriteGroups: (() -> [FavoriteGroup])?
     var onAddToFavorites: ((FileItem, UUID) -> Void)?
     var onOpenInNewTab: ((URL) -> Void)?
+    // Dual pane mode: whether this pane is the active one, the folder shown in the other pane
+    // (nil in single pane mode), and callbacks to make this pane active / switch to the other one
+    var isActivePane = true
+    var otherPaneURL: URL?
+    var onActivate: (() -> Void)?
+    var onSwitchPane: (() -> Void)?
 
     func makeCoordinator() -> FileTableCoordinator { FileTableCoordinator() }
 
@@ -41,6 +47,7 @@ struct FileTableNSView: NSViewRepresentable {
         sv.hasVerticalScroller = true
         sv.autohidesScrollers = true
         sv.borderType = .noBorder
+        context.coordinator.observeWidth(of: sv.contentView)
         return sv
     }
 
@@ -51,10 +58,14 @@ struct FileTableNSView: NSViewRepresentable {
         c.favoriteGroups = favoriteGroups
         c.onAddToFavorites = onAddToFavorites
         c.onOpenInNewTab = onOpenInNewTab
+        c.otherPaneURL = otherPaneURL
+        c.onActivate = onActivate
+        c.onSwitchPane = onSwitchPane
         c.applyLocationRoot(locationRoot)
         c.reloadIfNeeded(newItems: items)
         c.applySortIndicator(sortState)
         c.applyLanguage(language)
+        c.applyActive(isActivePane)
     }
 }
 
@@ -69,6 +80,11 @@ final class FileTableCoordinator: NSObject {
     var favoriteGroups: (() -> [FavoriteGroup])?
     var onAddToFavorites: ((FileItem, UUID) -> Void)?
     var onOpenInNewTab: ((URL) -> Void)?
+    var otherPaneURL: URL?
+    var onActivate: (() -> Void)?
+    var onSwitchPane: (() -> Void)?
+    private var isActive: Bool?
+    private var widthObserver: NSObjectProtocol?
 
     private var currentSortState = FileSortState(key: "", ascending: true)
     private var currentLanguage: AppLanguage?
@@ -96,6 +112,10 @@ final class FileTableCoordinator: NSObject {
     override init() {
         super.init()
         setupTableView()
+    }
+
+    deinit {
+        if let widthObserver { NotificationCenter.default.removeObserver(widthObserver) }
     }
 
     // MARK: - Setup
@@ -181,6 +201,20 @@ final class FileTableCoordinator: NSObject {
             guard let self else { return }
             viewModel?.makeAliases(for: selectedItems)
         }
+        tableView.onFocus = { [weak self] in self?.onActivate?() }
+        tableView.onTabKey = { [weak self] in
+            guard let switchPane = self?.onSwitchPane else { return false }
+            switchPane()
+            return true
+        }
+        tableView.onCopyToOtherPane = { [weak self] in
+            guard let self else { return }
+            transferToOtherPane(selectedItems, copy: true)
+        }
+        tableView.onMoveToOtherPane = { [weak self] in
+            guard let self else { return }
+            transferToOtherPane(selectedItems, copy: false)
+        }
 
         let menu = NSMenu()
         menu.delegate = self
@@ -217,12 +251,46 @@ final class FileTableCoordinator: NSObject {
         viewModel?.selectedItems = newSelection.compactMap { newItems[$0] }
     }
 
+    // Column widths are saved from whatever width the list had last time (e.g. a full window), which
+    // can be wider than a pane in dual pane mode. Whenever the visible width changes, let the Name column
+    // take up the rest so the list doesn't scroll sideways (the same rule as firstColumnOnlyAutoresizingStyle)
+    func observeWidth(of clipView: NSClipView) {
+        clipView.postsFrameChangedNotifications = true
+        widthObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification, object: clipView, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitNameColumn() }
+        }
+    }
+
+    private func fitNameColumn() {
+        guard let clipView = tableView.enclosingScrollView?.contentView,
+              let nameColumn = tableView.tableColumn(withIdentifier: nameID) else { return }
+        // Measure the laid-out columns rather than adding up widths, so the padding of the inset
+        // table style (same on both ends) and the cell spacing are included
+        let visibleIndexes = tableView.tableColumns.indices.filter { !tableView.tableColumns[$0].isHidden }
+        guard let first = visibleIndexes.first, let last = visibleIndexes.last else { return }
+        let leadingPadding = tableView.rect(ofColumn: first).minX
+        let contentWidth = tableView.rect(ofColumn: last).maxX + leadingPadding
+        let width = max(nameColumn.minWidth, nameColumn.width - (contentWidth - clipView.bounds.width))
+        if abs(nameColumn.width - width) > 0.5 { nameColumn.width = width }
+    }
+
+    // When this pane becomes the active one (e.g. by Tab or by clicking its tab bar), move the keyboard
+    // focus to its list. Only on the change, so focus in the search field or address bar isn't taken away
+    func applyActive(_ active: Bool) {
+        defer { isActive = active }
+        guard active, isActive == false, let window = tableView.window,
+              window.firstResponder !== tableView else { return }
+        window.makeFirstResponder(tableView)
+    }
+
     func applyLocationRoot(_ root: URL?) {
         // The column's visibility is re-applied every time because column autosave may have restored it
         tableView.tableColumn(withIdentifier: locationID)?.isHidden = root == nil
         guard root != locationRoot else { return }
         locationRoot = root
-        tableView.sizeLastColumnToFit()
+        fitNameColumn()
     }
 
     // e.g. "Projects/Vela/Views" for a match in Views when searching from Projects
@@ -357,6 +425,14 @@ final class FileTableCoordinator: NSObject {
         tableView.selectedRowIndexes.compactMap { $0 < items.count ? items[$0] : nil }
     }
 
+    // F5 / F6 and the context menu in dual pane mode: copy or move into the folder shown in the other pane
+    private func transferToOtherPane(_ targets: [FileItem], copy: Bool) {
+        guard let otherPaneURL, !targets.isEmpty else { return }
+        let urls = targets.map(\.url)
+        if copy { viewModel?.copyURLs(urls, to: otherPaneURL) }
+        else    { viewModel?.moveURLs(urls, to: otherPaneURL) }
+    }
+
     // MARK: - Trash (shared between key and menu)
 
     private func showTrashAlert(for targets: [FileItem]) {
@@ -399,23 +475,40 @@ extension FileTableCoordinator: NSTableViewDataSource {
                    validateDrop info: NSDraggingInfo,
                    proposedRow row: Int,
                    proposedDropOperation op: NSTableView.DropOperation) -> NSDragOperation {
-        guard op == .on, row >= 0, row < items.count, items[row].isDirectory else { return [] }
-        let destURL = items[row].url
         let sources = info.draggingPasteboard
             .readObjects(forClasses: [NSURL.self], options: nil)?
             .compactMap { $0 as? URL } ?? []
-        for src in sources {
-            if src == destURL || destURL.path.hasPrefix(src.path + "/") { return [] }
+        let isCopy = NSEvent.modifierFlags.contains(.option)
+        if op == .on, row >= 0, row < items.count, items[row].isDirectory {
+            let destURL = items[row].url
+            for src in sources {
+                if src == destURL || destURL.path.hasPrefix(src.path + "/") { return [] }
+            }
+            return isCopy ? .copy : .move
         }
-        return NSEvent.modifierFlags.contains(.option) ? .copy : .move
+        // Anywhere else (an empty area, between rows or a file) drops into the folder being shown,
+        // e.g. from the other pane or from Finder. Moving items into the folder they're already in does nothing
+        guard let currentURL = viewModel?.currentURL, !sources.isEmpty else { return [] }
+        let alreadyHere = sources.allSatisfy {
+            $0.deletingLastPathComponent().standardizedFileURL.path == currentURL.standardizedFileURL.path
+        }
+        if alreadyHere && !isCopy { return [] }
+        tableView.setDropRow(-1, dropOperation: .on)
+        return isCopy ? .copy : .move
     }
 
     func tableView(_ tableView: NSTableView,
                    acceptDrop info: NSDraggingInfo,
                    row: Int,
                    dropOperation op: NSTableView.DropOperation) -> Bool {
-        guard op == .on, row >= 0, row < items.count, items[row].isDirectory else { return false }
-        let destURL = items[row].url
+        let destURL: URL
+        if row == -1, let currentURL = viewModel?.currentURL {
+            destURL = currentURL
+        } else if op == .on, row >= 0, row < items.count, items[row].isDirectory {
+            destURL = items[row].url
+        } else {
+            return false
+        }
         let isCopy = NSEvent.modifierFlags.contains(.option)
         let sources = info.draggingPasteboard
             .readObjects(forClasses: [NSURL.self], options: nil)?
@@ -551,6 +644,10 @@ extension FileTableCoordinator: NSMenuDelegate {
             addMenuItem(to: menu, title: L10n.duplicate, action: #selector(menuDuplicateItem))
             addMenuItem(to: menu, title: L10n.makeAlias, action: #selector(menuMakeAlias))
             addMenuItem(to: menu, title: L10n.move, action: #selector(menuMoveItem))
+            if otherPaneURL != nil {
+                addMenuItem(to: menu, title: L10n.copyToOtherPane, action: #selector(menuCopyToOtherPane))
+                addMenuItem(to: menu, title: L10n.moveToOtherPane, action: #selector(menuMoveToOtherPane))
+            }
             addMenuItem(to: menu, title: L10n.compressToZip, action: #selector(menuCompressItem))
             if item.isDirectory {
                 menu.addItem(.separator())
@@ -763,6 +860,14 @@ extension FileTableCoordinator: NSMenuDelegate {
         viewModel?.moveItem(items[row])
     }
 
+    @objc private func menuCopyToOtherPane() {
+        transferToOtherPane(contextTargets(forClickedRow: tableView.clickedRow), copy: true)
+    }
+
+    @objc private func menuMoveToOtherPane() {
+        transferToOtherPane(contextTargets(forClickedRow: tableView.clickedRow), copy: false)
+    }
+
     @objc private func menuCompressItem() {
         let row = tableView.clickedRow
         guard row >= 0, row < items.count else { return }
@@ -841,7 +946,18 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
     var onMoveItemHere: (() -> Void)?
     var onDuplicate: (() -> Void)?
     var onMakeAlias: (() -> Void)?
+    // Dual pane mode
+    var onFocus: (() -> Void)?
+    var onTabKey: (() -> Bool)?
+    var onCopyToOtherPane: (() -> Void)?
+    var onMoveToOtherPane: (() -> Void)?
     var quickLookURL: URL?
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted { onFocus?() }
+        return accepted
+    }
 
     override func otherMouseDown(with event: NSEvent) {
         // buttonNumber 2 = ホイール（中ボタン）
@@ -851,7 +967,14 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
 
     override func keyDown(with event: NSEvent) {
         let cmd = event.modifierFlags.contains(.command)
+        let flags = event.modifierFlags.intersection([.command, .option, .control])
         switch event.keyCode {
+        case 48 where flags.isEmpty: // Tab / Shift+Tab: switch to the other pane (otherwise the next key view)
+            if onTabKey?() != true { super.keyDown(with: event) }
+        case 96 where flags.isEmpty: // F5: copy to the other pane
+            onCopyToOtherPane?()
+        case 97 where flags.isEmpty: // F6: move to the other pane
+            onMoveToOtherPane?()
         case 49:      // Space
             onSpaceKey?()
         case 36, 76:  // Return, numpad Enter

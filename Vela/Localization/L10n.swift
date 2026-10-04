@@ -58,6 +58,10 @@ enum L10n {
     static var closeWindow: String { tr("Close Window", "ウインドウを閉じる") }
     static var showPreviousTab: String { tr("Show Previous Tab", "前のタブを表示") }
     static var showNextTab: String     { tr("Show Next Tab", "次のタブを表示") }
+    static var dualPane: String        { tr("Dual Pane", "2ペイン表示") }
+    static var switchPane: String      { tr("Switch to Other Pane", "反対側のペインに切り替え") }
+    static var sameFolderInOtherPane: String { tr("Show This Folder in Other Pane", "反対側のペインで同じフォルダを開く") }
+    static var swapPanes: String       { tr("Swap Panes", "左右のペインを入れ替え") }
 
     // MARK: Undo / Redo（ファイル一覧にフォーカスがあるときの Edit メニュー項目）
     static var undo: String { tr("Undo", "取り消す") }
@@ -86,6 +90,7 @@ enum L10n {
     static var searchScopeHelp: String          { tr("Search Scope", "検索範囲") }
     static var showHiddenFiles: String { tr("Show Hidden Files", "隠しファイルを表示") }
     static var hideHiddenFiles: String { tr("Hide Hidden Files", "隠しファイルを非表示") }
+    static var dualPaneHelp: String    { tr("Dual Pane (⌃⌘2)", "2ペイン表示 (⌃⌘2)") }
 
     // MARK: Sidebar
     static var favorites: String { tr("Favorites", "よく使う項目") }
@@ -212,6 +217,8 @@ enum L10n {
     static var paste: String                { tr("Paste", "ペースト") }
     static var moveItemHere: String         { tr("Move Item Here", "ここに項目を移動") }
     static var openInTerminal: String       { tr("Open in Terminal", "ターミナルで開く") }
+    static var copyToOtherPane: String      { tr("Copy to Other Pane (F5)", "反対側のペインにコピー (F5)") }
+    static var moveToOtherPane: String      { tr("Move to Other Pane (F6)", "反対側のペインに移動 (F6)") }
 
     // 複製・エイリアスの名前に付ける語（Finder と同じ表記。例: "Report copy.pdf" / "Report のコピー.pdf"）
     static var copySuffix: String  { tr(" copy", " のコピー") }

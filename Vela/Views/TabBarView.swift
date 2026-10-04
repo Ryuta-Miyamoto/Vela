@@ -9,7 +9,10 @@ import SwiftUI
 import AppKit
 
 struct TabBarView: View {
-    var appState: AppState
+    var pane: PaneState
+    // In dual pane mode only the active pane's selected tab is underlined in the accent color
+    var isActivePane = true
+    var onClose: (Int) -> Void
 
     // ScrollView のスクロール位置的に、まだ左右へスクロールできる余地があるか
     @State private var canScrollLeft = false
@@ -30,20 +33,21 @@ struct TabBarView: View {
         ScrollViewReader { proxy in
             HStack(spacing: 0) {
                 scrollButton(systemName: "chevron.left", help: L10n.scrollTabsLeftHelp, isVisible: canScrollLeft) {
-                    guard let firstID = appState.tabs.first?.id else { return }
+                    guard let firstID = pane.tabs.first?.id else { return }
                     withAnimation { proxy.scrollTo(firstID, anchor: .leading) }
                 }
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
-                        ForEach(Array(appState.tabs.enumerated()), id: \.element.id) { index, tab in
+                        ForEach(Array(pane.tabs.enumerated()), id: \.element.id) { index, tab in
                             // タブと右隣の区切り線をひとまとまりとして並べ替える
                             HStack(spacing: 0) {
                                 TabItemView(
                                     title: tab.tabTitle,
-                                    isSelected: appState.selectedIndex == index,
-                                    onSelect: { appState.selectedIndex = index },
-                                    onClose: { appState.closeTab(at: index) }
+                                    isSelected: pane.selectedIndex == index,
+                                    isActivePane: isActivePane,
+                                    onSelect: { pane.selectedIndex = index },
+                                    onClose: { onClose(index) }
                                 )
                                 Divider().frame(height: 20)
                             }
@@ -58,7 +62,7 @@ struct TabBarView: View {
                             .id(tab.id)
                         }
 
-                        Button(action: { appState.addTab() }) {
+                        Button(action: { pane.addTab() }) {
                             Image(systemName: "plus")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(.secondary)
@@ -74,7 +78,7 @@ struct TabBarView: View {
                 .onPreferenceChange(TabWidthsKey.self) { tabWidths = $0 }
 
                 scrollButton(systemName: "chevron.right", help: L10n.scrollTabsRightHelp, isVisible: canScrollRight) {
-                    guard let lastID = appState.tabs.last?.id else { return }
+                    guard let lastID = pane.tabs.last?.id else { return }
                     withAnimation { proxy.scrollTo(lastID, anchor: .trailing) }
                 }
             }
@@ -85,9 +89,9 @@ struct TabBarView: View {
             .overlay(alignment: .bottom) { Divider() }
             // ⌘T などで選択タブが変わったら、見切れていても見える位置までスクロールする
             // （ドラッグ開始時の選択では、ポインタ下のタブがずれないようスクロールしない）
-            .onChange(of: appState.selectedIndex) { _, newIndex in
-                guard drag == nil, appState.tabs.indices.contains(newIndex) else { return }
-                withAnimation { proxy.scrollTo(appState.tabs[newIndex].id) }
+            .onChange(of: pane.selectedIndex) { _, newIndex in
+                guard drag == nil, pane.tabs.indices.contains(newIndex) else { return }
+                withAnimation { proxy.scrollTo(pane.tabs[newIndex].id) }
             }
         }
     }
@@ -102,11 +106,11 @@ struct TabBarView: View {
     private func reorderGesture(for tabID: UUID) -> some Gesture {
         DragGesture(minimumDistance: 5, coordinateSpace: .named(Self.viewportSpace))
             .onChanged { value in
-                guard let sourceIndex = appState.tabs.firstIndex(where: { $0.id == tabID }) else { return }
+                guard let sourceIndex = pane.tabs.firstIndex(where: { $0.id == tabID }) else { return }
                 if drag == nil {
                     drag = TabDrag(tabID: tabID, sourceIndex: sourceIndex, targetIndex: sourceIndex,
                                    pointerTranslation: 0, startScrollX: autoScroller.scrollX, translation: 0)
-                    appState.selectedIndex = sourceIndex
+                    pane.selectedIndex = sourceIndex
                 }
                 drag?.pointerTranslation = value.translation.width
                 updateDrag()
@@ -118,7 +122,7 @@ struct TabBarView: View {
                 // 配列の並べ替えとオフセットの解除を同じアニメーションで行うと、他のタブは見た目の位置を保ったまま、
                 // ドラッグ中のタブだけが挿入先へ収まる
                 withAnimation(.easeInOut(duration: 0.15)) {
-                    appState.moveTab(from: drag.sourceIndex, to: drag.targetIndex)
+                    pane.moveTab(from: drag.sourceIndex, to: drag.targetIndex)
                     self.drag = nil
                 }
             }
@@ -131,7 +135,7 @@ struct TabBarView: View {
         let startMinX = layoutMinX(at: current.sourceIndex)
         let scrolled = autoScroller.scrollX - current.startScrollX
         // タブ列の外へははみ出さないようにする
-        let maxMinX = max(0, appState.tabs.reduce(0) { $0 + (tabWidths[$1.id] ?? 0) } - width)
+        let maxMinX = max(0, pane.tabs.reduce(0) { $0 + (tabWidths[$1.id] ?? 0) } - width)
         let translation = min(max(startMinX + current.pointerTranslation + scrolled, 0), maxMinX) - startMinX
         let targetIndex = targetIndex(forCenterX: startMinX + translation + width / 2, draggedIndex: current.sourceIndex)
 
@@ -152,14 +156,14 @@ struct TabBarView: View {
 
     // 並べ替え前のレイアウトでの、index 番目のタブの左端
     private func layoutMinX(at index: Int) -> CGFloat {
-        appState.tabs.prefix(index).reduce(0) { $0 + (tabWidths[$1.id] ?? 0) }
+        pane.tabs.prefix(index).reduce(0) { $0 + (tabWidths[$1.id] ?? 0) }
     }
 
     // ドラッグ中のタブの中心より左に中心がある他のタブの数が、移動後のインデックスになる
     private func targetIndex(forCenterX centerX: CGFloat, draggedIndex: Int) -> Int {
         var count = 0
-        for index in appState.tabs.indices where index != draggedIndex {
-            let width = tabWidths[appState.tabs[index].id] ?? 0
+        for index in pane.tabs.indices where index != draggedIndex {
+            let width = tabWidths[pane.tabs[index].id] ?? 0
             if layoutMinX(at: index) + width / 2 < centerX { count += 1 }
         }
         return count
@@ -390,6 +394,7 @@ private struct VerticalToHorizontalScrollConverter: NSViewRepresentable {
 private struct TabItemView: View {
     let title: String
     let isSelected: Bool
+    let isActivePane: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
 
@@ -422,7 +427,7 @@ private struct TabItemView: View {
         .background(isSelected ? Color(nsColor: .windowBackgroundColor) : Color.clear)
         .overlay(alignment: .bottom) {
             if isSelected {
-                Rectangle().fill(Color.accentColor).frame(height: 2)
+                Rectangle().fill(isActivePane ? Color.accentColor : Color.secondary.opacity(0.4)).frame(height: 2)
             }
         }
         .contentShape(Rectangle())
