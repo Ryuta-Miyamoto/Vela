@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import Combine
 
 @Observable
 final class FileExplorerViewModel {
@@ -15,13 +16,27 @@ final class FileExplorerViewModel {
         didSet { startWatching() }
     }
     var items: [FileItem] = []
-    var searchText: String = ""
+    var searchText: String = "" {
+        didSet { if searchText != oldValue { scheduleSearch() } }
+    }
     var selectedItems: [FileItem] = []
+
+    // Results of a search that includes subfolders (a search in the current folder just filters items)
+    private(set) var searchResults: [FileItem] = []
+    private(set) var isSearching = false
+    private(set) var searchReachedLimit = false
 
     private var backStack: [URL] = []
     private var forwardStack: [URL] = []
     // 他のアプリでの変更も一覧に反映するため、表示中のディレクトリを監視する（背面のタブも含む）
     @ObservationIgnored private var watcher: DirectoryWatcher?
+    @ObservationIgnored private var search: SubfolderSearch?
+    @ObservationIgnored private var searchDebounce: DispatchWorkItem?
+
+    var trimmedSearchText: String { searchText.trimmingCharacters(in: .whitespaces) }
+    var isSubfolderSearchActive: Bool {
+        FileDisplaySettings.shared.searchIncludesSubfolders && !trimmedSearchText.isEmpty
+    }
 
     var canGoBack: Bool    { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
@@ -68,8 +83,67 @@ final class FileExplorerViewModel {
         navigate(to: parent)
     }
 
+    // Goes home if the current folder is on the given (unmounted) volume
+    func leaveIfInside(_ volumeURL: URL) {
+        let volumePath = volumeURL.standardizedFileURL.path
+        let path = currentURL.standardizedFileURL.path
+        guard path == volumePath || path.hasPrefix(volumePath + "/") else { return }
+        navigate(to: FileManager.default.homeDirectoryForCurrentUser)
+    }
+
+    deinit { search?.cancel() }
+
     func reload() {
         items = FileService.shared.contents(of: currentURL, includeHidden: FileDisplaySettings.shared.showHiddenFiles)
+        // Re-running a deep search on every change would be too slow, so only drop results that are gone
+        // (trashed, moved away)
+        if !searchResults.isEmpty {
+            let remaining = searchResults.filter { FileManager.default.fileExists(atPath: $0.url.path) }
+            if remaining.count != searchResults.count { searchResults = remaining }
+        }
+    }
+
+    // MARK: - Subfolder Search
+
+    // Restarts the search, e.g. after the scope or the hidden files setting changed
+    func refreshSearch() {
+        searchDebounce?.cancel()
+        startSearch()
+    }
+
+    private func scheduleSearch() {
+        searchDebounce?.cancel()
+        guard isSubfolderSearchActive else { return startSearch() }
+        // Wait until typing pauses so every keystroke doesn't start a new walk of the folder tree
+        let work = DispatchWorkItem { [weak self] in self?.startSearch() }
+        searchDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    private func startSearch() {
+        search?.cancel()
+        search = nil
+        searchResults = []
+        searchReachedLimit = false
+        guard isSubfolderSearchActive else {
+            isSearching = false
+            return
+        }
+        isSearching = true
+        let task = SubfolderSearch()
+        search = task
+        task.start(root: currentURL, query: trimmedSearchText,
+                   includeHidden: FileDisplaySettings.shared.showHiddenFiles,
+                   onBatch: { [weak self] batch in
+                       guard let self, self.search === task else { return }
+                       self.searchResults.append(contentsOf: batch)
+                   },
+                   onFinish: { [weak self] reachedLimit in
+                       guard let self, self.search === task else { return }
+                       self.isSearching = false
+                       self.searchReachedLimit = reachedLimit
+                       self.search = nil
+                   })
     }
 
     // MARK: - File Operations
@@ -142,6 +216,10 @@ final class FileExplorerViewModel {
         let dest = item.url.deletingLastPathComponent().appendingPathComponent(trimmed)
         do {
             try FileOperations.move(from: item.url, to: dest, actionName: L10n.rename)
+            // Keep a renamed search result in the list under its new name
+            if let index = searchResults.firstIndex(of: item), let renamed = FileService.item(at: dest) {
+                searchResults[index] = renamed
+            }
         } catch {
             let alert = NSAlert()
             alert.messageText = L10n.renameFailed
@@ -160,22 +238,20 @@ final class FileExplorerViewModel {
 
     // Finder の ⌘D と同じく、同じフォルダに「<名前> copy」を作る
     func duplicateItems(_ items: [FileItem]) {
-        for item in items {
-            let dest = Self.uniqueURL(in: item.url.deletingLastPathComponent(),
-                                      baseName: item.url.deletingPathExtension().lastPathComponent,
-                                      pathExtension: item.url.pathExtension,
-                                      suffix: L10n.copySuffix)
-            try? FileOperations.copy(from: item.url, to: dest, actionName: L10n.duplicate)
+        let requests = items.map {
+            FileOperationQueue.Request(source: $0.url,
+                                       destinationFolder: $0.url.deletingLastPathComponent(),
+                                       nameRule: .uniqueCopy(suffix: L10n.copySuffix))
         }
-        reload()
+        FileOperationQueue.shared.enqueue(.copy, requests, actionName: L10n.duplicate) { [weak self] in self?.reload() }
     }
 
     // Finder と同じく、拡張子も含めた名前の後ろに「alias」を付ける（例: "Report.pdf alias"）
     func makeAliases(for items: [FileItem]) {
         for item in items {
-            let dest = Self.uniqueURL(in: item.url.deletingLastPathComponent(),
-                                      baseName: item.name, pathExtension: "",
-                                      suffix: L10n.aliasSuffix)
+            let dest = FileOperations.uniqueURL(in: item.url.deletingLastPathComponent(),
+                                                baseName: item.name, pathExtension: "",
+                                                suffix: L10n.aliasSuffix)
             do {
                 try FileOperations.makeAlias(of: item.url, at: dest)
             } catch {
@@ -196,21 +272,6 @@ final class FileExplorerViewModel {
         url.deletingLastPathComponent().standardizedFileURL.path == folder.standardizedFileURL.path
     }
 
-    // 「<base><suffix>.<ext>」、既にあれば「<base><suffix> 2.<ext>」…と空いている名前を探す
-    private static func uniqueURL(in folder: URL, baseName: String, pathExtension: String, suffix: String) -> URL {
-        func url(_ name: String) -> URL {
-            let u = folder.appendingPathComponent(name)
-            return pathExtension.isEmpty ? u : u.appendingPathExtension(pathExtension)
-        }
-        var candidate = url(baseName + suffix)
-        var counter = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = url("\(baseName)\(suffix) \(counter)")
-            counter += 1
-        }
-        return candidate
-    }
-
     func moveItem(_ item: FileItem) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -219,8 +280,7 @@ final class FileExplorerViewModel {
         panel.prompt = L10n.moveHere
         panel.message = L10n.chooseMoveDestination(name: item.name)
         guard panel.runModal() == .OK, let dest = panel.url else { return }
-        try? FileOperations.move(from: item.url, to: dest.appendingPathComponent(item.name), actionName: L10n.move)
-        reload()
+        moveURLs([item.url], to: dest)
     }
 
     func trashItem(_ item: FileItem) {
@@ -242,66 +302,46 @@ final class FileExplorerViewModel {
         reload()
     }
 
-    func moveURL(_ source: URL, to destFolder: URL) {
-        guard source != destFolder,
-              !Self.isParent(destFolder, of: source),
-              !destFolder.path.hasPrefix(source.path + "/") else { return }
-        let dest = destFolder.appendingPathComponent(source.lastPathComponent)
-        try? FileOperations.move(from: source, to: dest, actionName: L10n.move)
-        reload()
+    // Copies and moves run in the background (FileOperationQueue); the list reloads when the job ends
+    func moveURLs(_ sources: [URL], to destFolder: URL) {
+        let requests = sources
+            .filter {
+                $0 != destFolder && !Self.isParent(destFolder, of: $0) && !destFolder.path.hasPrefix($0.path + "/")
+            }
+            .map { FileOperationQueue.Request(source: $0, destinationFolder: destFolder, nameRule: .keep) }
+        FileOperationQueue.shared.enqueue(.move, requests, actionName: L10n.move) { [weak self] in self?.reload() }
     }
 
-    func copyURL(_ source: URL, to destFolder: URL) {
-        guard source != destFolder,
-              !destFolder.path.hasPrefix(source.path + "/") else { return }
-        // 同じフォルダへのペーストは名前がぶつかるので、Finder と同じく複製として扱う
-        let dest = Self.isParent(destFolder, of: source)
-            ? Self.uniqueURL(in: destFolder,
-                             baseName: source.deletingPathExtension().lastPathComponent,
-                             pathExtension: source.pathExtension,
-                             suffix: L10n.copySuffix)
-            : destFolder.appendingPathComponent(source.lastPathComponent)
-        try? FileOperations.copy(from: source, to: dest)
-        if destFolder == currentURL { reload() }
+    func copyURLs(_ sources: [URL], to destFolder: URL) {
+        let requests = sources
+            .filter { $0 != destFolder && !destFolder.path.hasPrefix($0.path + "/") }
+            .map {
+                // 同じフォルダへのペーストは名前がぶつかるので、Finder と同じく複製として扱う
+                FileOperationQueue.Request(source: $0, destinationFolder: destFolder,
+                                           nameRule: Self.isParent(destFolder, of: $0) ? .uniqueCopy(suffix: L10n.copySuffix) : .keep)
+            }
+        FileOperationQueue.shared.enqueue(.copy, requests, actionName: L10n.copy) { [weak self] in self?.reload() }
     }
 }
 
-// MARK: - App State (Tab Management)
+// MARK: - Pane State (Tab Management)
 
+// The tabs of one file list pane. A window has one pane, or two side by side in dual pane mode
 @Observable
-final class AppState {
+final class PaneState {
+    let id = UUID()
     var tabs: [FileExplorerViewModel]
     var selectedIndex: Int
 
     var currentTab: FileExplorerViewModel { tabs[selectedIndex] }
 
-    // 前回終了時のタブを復元するのは起動直後の最初のウインドウだけ。⌘N で開く追加のウインドウはホームから始める
-    private static var hasRestoredSession = false
-
-    init() {
-        let restored = Self.hasRestoredSession ? nil : SavedSession.load()
-        Self.hasRestoredSession = true
-        // 前回から消えた・移動されたフォルダのタブは開かない
-        let urls = (restored?.paths ?? [])
-            .map { URL(fileURLWithPath: $0) }
-            .filter { url in
-                var isDir: ObjCBool = false
-                return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
-            }
-        if let restored, !urls.isEmpty {
-            tabs = urls.map { FileExplorerViewModel(url: $0) }
-            let selectedPath = restored.paths.indices.contains(restored.selectedIndex)
-                ? restored.paths[restored.selectedIndex] : nil
-            selectedIndex = urls.firstIndex { $0.path == selectedPath } ?? 0
-        } else {
-            tabs = [FileExplorerViewModel()]
-            selectedIndex = 0
-        }
+    init(tabs: [FileExplorerViewModel], selectedIndex: Int) {
+        self.tabs = tabs
+        self.selectedIndex = tabs.indices.contains(selectedIndex) ? selectedIndex : 0
     }
 
-    // 保存対象（タブごとの表示中フォルダと選択中のタブ）。ContentView が変化を監視して保存する
-    var session: SavedSession {
-        SavedSession(paths: tabs.map(\.currentURL.path), selectedIndex: selectedIndex)
+    convenience init(url: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        self.init(tabs: [FileExplorerViewModel(url: url)], selectedIndex: 0)
     }
 
     func addTab() {
@@ -337,12 +377,9 @@ final class AppState {
         selectedIndex = tabs.firstIndex { $0.id == selectedID } ?? 0
     }
 
-    func closeTab(at index: Int) {
-        // 残り1タブを閉じるのはウインドウを閉じる操作に相当するため、アプリを終了する
-        guard tabs.count > 1 else {
-            NSApplication.shared.terminate(nil)
-            return
-        }
+    // Removes a tab when it isn't the last one. Closing the last tab is decided by AppState
+    func removeTab(at index: Int) {
+        guard tabs.count > 1, tabs.indices.contains(index) else { return }
         tabs.remove(at: index)
         if selectedIndex > index {
             selectedIndex -= 1
@@ -352,14 +389,147 @@ final class AppState {
     }
 }
 
+// MARK: - App State
+
+@Observable
+final class AppState {
+    // panes[0] is the left pane and panes[1] the right one. The second pane is created the first time dual
+    // pane mode is turned on and kept (hidden) when it's turned off, so turning it back on restores its tabs
+    private(set) var panes: [PaneState]
+    private(set) var activePaneIndex: Int
+    private(set) var isDualPane: Bool
+
+    // The toolbar, sidebar, status bar and menu commands act on the active pane
+    var activePane: PaneState { panes[activePaneIndex] }
+    var currentTab: FileExplorerViewModel { activePane.currentTab }
+    var allTabs: [FileExplorerViewModel] { panes.flatMap(\.tabs) }
+
+    // 前回終了時のタブを復元するのは起動直後の最初のウインドウだけ。⌘N で開く追加のウインドウはホームから始める
+    private static var hasRestoredSession = false
+
+    init() {
+        let restored = Self.hasRestoredSession ? nil : SavedSession.load()
+        Self.hasRestoredSession = true
+        let first = restored.flatMap { Self.restorePane(paths: $0.paths, selectedIndex: $0.selectedIndex) }
+        let second = restored.flatMap { session in
+            session.secondPanePaths.flatMap { Self.restorePane(paths: $0, selectedIndex: session.secondPaneSelectedIndex ?? 0) }
+        }
+        var restoredPanes = [first, second].compactMap { $0 }
+        if restoredPanes.isEmpty { restoredPanes = [PaneState()] }
+        panes = restoredPanes
+        isDualPane = restoredPanes.count == 2 && restored?.isDualPane == true
+        activePaneIndex = max(0, min(restored?.activePaneIndex ?? 0, restoredPanes.count - 1))
+    }
+
+    // 前回から消えた・移動されたフォルダのタブは開かない
+    private static func restorePane(paths: [String], selectedIndex: Int) -> PaneState? {
+        let urls = paths
+            .map { URL(fileURLWithPath: $0) }
+            .filter { url in
+                var isDir: ObjCBool = false
+                return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+            }
+        guard !urls.isEmpty else { return nil }
+        let selectedPath = paths.indices.contains(selectedIndex) ? paths[selectedIndex] : nil
+        return PaneState(tabs: urls.map { FileExplorerViewModel(url: $0) },
+                         selectedIndex: urls.firstIndex { $0.path == selectedPath } ?? 0)
+    }
+
+    // 保存対象（ペインごとのタブの表示中フォルダと選択中のタブ、2ペイン表示の状態）。ContentView が変化を監視して保存する
+    var session: SavedSession {
+        let second = panes.count > 1 ? panes[1] : nil
+        return SavedSession(paths: panes[0].tabs.map(\.currentURL.path),
+                            selectedIndex: panes[0].selectedIndex,
+                            secondPanePaths: second?.tabs.map(\.currentURL.path),
+                            secondPaneSelectedIndex: second?.selectedIndex,
+                            isDualPane: isDualPane,
+                            activePaneIndex: activePaneIndex)
+    }
+
+    // MARK: Tabs of the active pane (menu commands and shortcuts)
+
+    func addTab() { activePane.addTab() }
+    func openInNewTab(_ url: URL) { activePane.openInNewTab(url) }
+    func selectNextTab() { activePane.selectNextTab() }
+    func selectPreviousTab() { activePane.selectPreviousTab() }
+    func selectTab(at index: Int) { activePane.selectTab(at: index) }
+    func closeCurrentTab() { closeTab(at: activePane.selectedIndex, in: activePane) }
+
+    func closeTab(at index: Int, in pane: PaneState) {
+        if pane.tabs.count > 1 {
+            pane.removeTab(at: index)
+            return
+        }
+        // Closing the last tab of one of two panes closes that pane
+        if isDualPane, let paneIndex = panes.firstIndex(where: { $0 === pane }) {
+            panes.remove(at: paneIndex)
+            activePaneIndex = 0
+            isDualPane = false
+            return
+        }
+        // 残り1タブを閉じるのはウインドウを閉じる操作に相当するため、アプリを終了する
+        NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: Dual Pane
+
+    func toggleDualPane() {
+        if isDualPane {
+            // Keep showing the pane that was being used
+            isDualPane = false
+            return
+        }
+        if panes.count < 2 {
+            panes.append(PaneState(url: currentTab.currentURL))
+        }
+        isDualPane = true
+    }
+
+    // The pane across from the given one, while both are shown
+    func otherPane(of pane: PaneState) -> PaneState? {
+        guard isDualPane else { return nil }
+        return panes.first { $0 !== pane }
+    }
+
+    func activate(_ pane: PaneState) {
+        guard let index = panes.firstIndex(where: { $0 === pane }), index != activePaneIndex else { return }
+        activePaneIndex = index
+    }
+
+    func activateOtherPane() {
+        guard isDualPane else { return }
+        activePaneIndex = 1 - activePaneIndex
+    }
+
+    func showSameFolderInOtherPane() {
+        guard let other = otherPane(of: activePane) else { return }
+        let url = currentTab.currentURL
+        guard other.currentTab.currentURL != url else { return }
+        other.currentTab.navigate(to: url)
+    }
+
+    // The active pane stays active after moving to the other side
+    func swapPanes() {
+        guard isDualPane, panes.count == 2 else { return }
+        panes.swapAt(0, 1)
+        activePaneIndex = 1 - activePaneIndex
+    }
+}
+
 // MARK: - Session (Tab Restoration)
 
 // ウインドウが複数あるときは、最後に操作したウインドウのタブが保存される
 struct SavedSession: Codable, Equatable {
     private static let udKey = "Vela.session.v1"
 
+    // The first (left) pane
     var paths: [String]
     var selectedIndex: Int
+    // Added with dual pane mode. Optional so that sessions saved by earlier versions still load
+    var secondPanePaths: [String]?
+    var secondPaneSelectedIndex: Int?
+    var isDualPane: Bool?
+    var activePaneIndex: Int?
 
     static func load() -> SavedSession? {
         guard let data = UserDefaults.standard.data(forKey: udKey) else { return nil }
@@ -380,8 +550,15 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TabBarView(appState: appState)
-            ToolbarView(viewModel: appState.currentTab)
+            // In dual pane mode each pane has its own tab bar and address bar instead
+            if !appState.isDualPane {
+                TabBarView(pane: appState.activePane,
+                           onClose: { appState.closeTab(at: $0, in: appState.activePane) })
+            }
+            ToolbarView(viewModel: appState.currentTab,
+                        showsAddressBar: !appState.isDualPane,
+                        isDualPane: appState.isDualPane,
+                        onToggleDualPane: { appState.toggleDualPane() })
             Divider()
             NavigationSplitView {
                 SidebarView(
@@ -391,15 +568,11 @@ struct ContentView: View {
                 )
                     .navigationSplitViewColumnWidth(min: 150, ideal: 200)
             } detail: {
-                FileListView(
-                    viewModel: appState.currentTab,
-                    favoriteGroups: { favoritesStore.groups },
-                    onAddToFavorites: { item, groupID in
-                        favoritesStore.add(name: item.name, url: item.url, toGroup: groupID)
-                    },
-                    onOpenInNewTab: { appState.openInNewTab($0) }
-                )
-                .id(appState.currentTab.id)
+                if appState.isDualPane {
+                    DualPaneView(appState: appState, favoritesStore: favoritesStore)
+                } else {
+                    PaneFileList(appState: appState, pane: appState.activePane, favoritesStore: favoritesStore)
+                }
             }
             StatusBarView(viewModel: appState.currentTab)
         }
@@ -407,7 +580,19 @@ struct ContentView: View {
         .onChange(of: appState.session) { _, session in session.save() }
         // 隠しファイルの表示設定は全タブ共通のため、背面のタブも含めて読み込み直す
         .onChange(of: FileDisplaySettings.shared.showHiddenFiles) { _, _ in
-            appState.tabs.forEach { $0.reload() }
+            appState.allTabs.forEach {
+                $0.reload()
+                if $0.isSubfolderSearchActive { $0.refreshSearch() }
+            }
+        }
+        // The search scope is shared too; tabs with a query switch between filtering and searching subfolders
+        .onChange(of: FileDisplaySettings.shared.searchIncludesSubfolders) { _, _ in
+            appState.allTabs.forEach { $0.refreshSearch() }
+        }
+        // A tab showing a folder on a volume that was just ejected would be left on a missing folder
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { notification in
+            guard let volumeURL = notification.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL else { return }
+            appState.allTabs.forEach { $0.leaveIfInside(volumeURL) }
         }
         .frame(minWidth: 800, minHeight: 520)
         .navigationTitle(appState.currentTab.tabTitle)
@@ -416,7 +601,7 @@ struct ContentView: View {
     }
 
     // メニューに並べると冗長になる補助ショートカット（Safari と同じ割り当て）。
-    // ⌘⇧[ / ⌘⇧] で前後のタブ、⌘1〜⌘8 で n 番目のタブ、⌘9 で最後のタブへ移動する
+    // ⌘⇧[ / ⌘⇧] で前後のタブ、⌘1〜⌘8 で n 番目のタブ、⌘9 で最後のタブへ移動する（2ペイン表示ではアクティブなペインのタブ）
     private var tabShortcuts: some View {
         Group {
             Button("") { appState.selectPreviousTab() }
@@ -427,10 +612,123 @@ struct ContentView: View {
                 Button("") { appState.selectTab(at: number - 1) }
                     .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
             }
-            Button("") { appState.selectTab(at: appState.tabs.count - 1) }
+            Button("") { appState.selectTab(at: appState.activePane.tabs.count - 1) }
                 .keyboardShortcut("9", modifiers: .command)
         }
         .hidden()
+    }
+}
+
+// MARK: - Panes
+
+// The file list of a pane's current tab
+private struct PaneFileList: View {
+    var appState: AppState
+    var pane: PaneState
+    var favoritesStore: FavoritesStore
+
+    var body: some View {
+        let isDualPane = appState.isDualPane
+        FileListView(
+            viewModel: pane.currentTab,
+            favoriteGroups: { favoritesStore.groups },
+            onAddToFavorites: { item, groupID in
+                favoritesStore.add(name: item.name, url: item.url, toGroup: groupID)
+            },
+            onOpenInNewTab: { pane.openInNewTab($0) },
+            isActivePane: appState.activePane === pane,
+            otherPaneURL: appState.otherPane(of: pane)?.currentTab.currentURL,
+            onActivate: isDualPane ? { appState.activate(pane) } : nil,
+            onSwitchPane: isDualPane ? { appState.activateOtherPane() } : nil
+        )
+        .id(pane.currentTab.id)
+    }
+}
+
+// Two panes side by side with a draggable divider. The split ratio is remembered
+private struct DualPaneView: View {
+    var appState: AppState
+    var favoritesStore: FavoritesStore
+
+    @AppStorage("Vela.dualPaneSplit") private var split: Double = 0.5
+    @State private var isHoveringDivider = false
+
+    private static let minPaneWidth: CGFloat = 240
+    private static let space = "DualPane"
+
+    var body: some View {
+        GeometryReader { geometry in
+            let available = max(geometry.size.width - 1, 1)
+            HStack(spacing: 0) {
+                pane(appState.panes[0])
+                    .frame(width: (available * clampedSplit(available: available)).rounded())
+                divider(available: available)
+                pane(appState.panes[1])
+                    .frame(maxWidth: .infinity)
+            }
+            .coordinateSpace(name: Self.space)
+        }
+    }
+
+    private func clampedSplit(available: CGFloat) -> Double {
+        let minFraction = min(0.5, Self.minPaneWidth / available)
+        return min(max(split, minFraction), 1 - minFraction)
+    }
+
+    private func pane(_ pane: PaneState) -> some View {
+        PaneView(appState: appState, pane: pane, favoritesStore: favoritesStore)
+    }
+
+    // A 1pt line with a wider invisible handle; double-click to split evenly
+    private func divider(available: CGFloat) -> some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .overlay {
+                Color.clear
+                    .frame(width: 9)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        guard hovering != isHoveringDivider else { return }
+                        isHoveringDivider = hovering
+                        if hovering { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.space))
+                            .onChanged { value in split = Double(value.location.x / available) }
+                            .onEnded { _ in split = clampedSplit(available: available) }
+                    )
+                    .onTapGesture(count: 2) { split = 0.5 }
+            }
+            .zIndex(1)
+    }
+}
+
+// One pane in dual pane mode: its tab bar, address bar and file list. The active pane is marked with
+// an accent line along its top edge; clicking anywhere in a pane makes it active
+private struct PaneView: View {
+    var appState: AppState
+    var pane: PaneState
+    var favoritesStore: FavoritesStore
+
+    var body: some View {
+        let isActive = appState.activePane === pane
+        VStack(spacing: 0) {
+            TabBarView(pane: pane, isActivePane: isActive,
+                       onClose: { appState.closeTab(at: $0, in: pane) })
+            AddressBarView(viewModel: pane.currentTab)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.bar)
+            Divider()
+            PaneFileList(appState: appState, pane: pane, favoritesStore: favoritesStore)
+        }
+        .overlay(alignment: .top) {
+            if isActive {
+                Rectangle().fill(Color.accentColor).frame(height: 2)
+            }
+        }
+        .simultaneousGesture(TapGesture().onEnded { appState.activate(pane) })
     }
 }
 

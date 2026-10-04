@@ -33,7 +33,9 @@ struct SidebarView: NSViewRepresentable {
         c.store = favoritesStore
         c.onOpenInNewTab = onOpenInNewTab
         // groups と表示言語をここで読むことで、変更時に updateNSView が呼ばれるようにする
-        c.reloadIfNeeded(groups: favoritesStore.groups, language: LanguageSettings.shared.language)
+        c.reloadIfNeeded(groups: favoritesStore.groups,
+                         volumes: VolumesStore.shared.volumes,
+                         language: LanguageSettings.shared.language)
     }
 }
 
@@ -43,10 +45,13 @@ final class SidebarCoordinator: NSObject {
 
     // NSOutlineView は項目を参照の同一性で追跡するため、id ごとに同じインスタンスを使い回す
     final class Node: NSObject {
-        enum Kind { case group, item }
+        // volumesHeader / volume make up the Locations section below the favorite groups
+        enum Kind { case group, item, volumesHeader, volume }
         let id: UUID
         let kind: Kind
         init(id: UUID, kind: Kind) { self.id = id; self.kind = kind }
+
+        var isHeader: Bool { kind == .group || kind == .volumesHeader }
     }
 
     // サイドバー内の並べ替え専用の型。.fileURL を載せないことで、ファイル一覧やお気に入りフォルダへの
@@ -60,14 +65,21 @@ final class SidebarCoordinator: NSObject {
     let outlineView = SidebarOutlineView()
 
     private var groups: [FavoriteGroup] = []
+    private var volumes: [VolumeItem] = []
     private var language: AppLanguage?
     private var nodes: [UUID: Node] = [:]
+    private let volumesHeaderNode = Node(id: UUID(), kind: .volumesHeader)
+    // Volumes have no UUID of their own, so each mount point gets a stable node
+    private var volumeNodes: [URL: Node] = [:]
     // reload 中に展開状態を復元すると開閉の通知が飛ぶため、その間は保存しない
     private var isApplyingExpansion = false
+
+    private static let volumesExpandedKey = "Vela.sidebar.volumesExpanded"
 
     private let columnID = NSUserInterfaceItemIdentifier("favorite")
     private let groupCellID = NSUserInterfaceItemIdentifier("groupCell")
     private let itemCellID = NSUserInterfaceItemIdentifier("itemCell")
+    private let volumeCellID = NSUserInterfaceItemIdentifier("volumeCell")
 
     override init() {
         super.init()
@@ -91,21 +103,25 @@ final class SidebarCoordinator: NSObject {
         outlineView.menu = menu
 
         outlineView.onMiddleClick = { [weak self] row in
-            guard let self, let item = self.favoriteItem(atRow: row) else { return }
-            self.onOpenInNewTab?(item.url)
+            guard let self, let url = self.folderURL(atRow: row) else { return }
+            self.onOpenInNewTab?(url)
         }
     }
 
-    func reloadIfNeeded(groups newGroups: [FavoriteGroup], language newLanguage: AppLanguage) {
-        guard newGroups != groups || newLanguage != language else { return }
+    func reloadIfNeeded(groups newGroups: [FavoriteGroup], volumes newVolumes: [VolumeItem], language newLanguage: AppLanguage) {
+        guard newGroups != groups || newVolumes != volumes || newLanguage != language else { return }
         groups = newGroups
+        volumes = newVolumes
         language = newLanguage
+        volumeNodes = volumeNodes.filter { url, _ in volumes.contains { $0.url == url } }
         outlineView.reloadData()
         isApplyingExpansion = true
         for group in groups {
             let node = node(for: group.id, kind: .group)
             if group.isExpanded { outlineView.expandItem(node) } else { outlineView.collapseItem(node) }
         }
+        let volumesExpanded = UserDefaults.standard.object(forKey: Self.volumesExpandedKey) as? Bool ?? true
+        if volumesExpanded { outlineView.expandItem(volumesHeaderNode) } else { outlineView.collapseItem(volumesHeaderNode) }
         isApplyingExpansion = false
     }
 
@@ -133,9 +149,30 @@ final class SidebarCoordinator: NSObject {
         return nil
     }
 
-    private func favoriteItem(atRow row: Int) -> FavoriteItem? {
-        guard row >= 0, let node = outlineView.item(atRow: row) as? Node, node.kind == .item else { return nil }
-        return favoriteItem(for: node)
+    private func volumeNode(for volume: VolumeItem) -> Node {
+        if let node = volumeNodes[volume.url] { return node }
+        let node = Node(id: UUID(), kind: .volume)
+        volumeNodes[volume.url] = node
+        return node
+    }
+
+    private func volume(for node: Node) -> VolumeItem? {
+        guard let url = volumeNodes.first(where: { $0.value === node })?.key else { return nil }
+        return volumes.first { $0.url == url }
+    }
+
+    // The folder a favorite or volume row points to (headers have none)
+    private func folderURL(for node: Node) -> URL? {
+        switch node.kind {
+        case .item:   return favoriteItem(for: node)?.url
+        case .volume: return volume(for: node)?.url
+        case .group, .volumesHeader: return nil
+        }
+    }
+
+    private func folderURL(atRow row: Int) -> URL? {
+        guard row >= 0, let node = outlineView.item(atRow: row) as? Node else { return nil }
+        return folderURL(for: node)
     }
 
     // MARK: Actions
@@ -143,14 +180,18 @@ final class SidebarCoordinator: NSObject {
     @objc private func handleClick() {
         let row = outlineView.clickedRow
         guard row >= 0, let node = outlineView.item(atRow: row) as? Node else { return }
-        switch node.kind {
-        case .item:
-            guard let item = favoriteItem(for: node) else { return }
-            viewModel?.navigate(to: item.url)
-        case .group:
+        if node.isHeader {
             if outlineView.isItemExpanded(node) { outlineView.animator().collapseItem(node) }
             else { outlineView.animator().expandItem(node) }
+        } else if let url = folderURL(for: node) {
+            viewModel?.navigate(to: url)
         }
+    }
+
+    @objc private func menuEject(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL,
+              let volume = volumes.first(where: { $0.url == url }) else { return }
+        VolumesStore.shared.eject(volume)
     }
 
     @objc private func menuNewGroup() {
@@ -264,30 +305,91 @@ final class SidebarCoordinator: NSObject {
     }
 }
 
+// MARK: - VolumeCellView
+
+// A volume row: icon, name and an eject button on the right (hidden for disks that can't be ejected)
+final class VolumeCellView: NSTableCellView {
+    var onEject: (() -> Void)?
+    private let ejectButton = NSButton()
+
+    init(identifier: NSUserInterfaceItemIdentifier) {
+        super.init(frame: .zero)
+        self.identifier = identifier
+
+        let imageView = NSImageView()
+        imageView.contentTintColor = .controlAccentColor
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        let label = NSTextField(labelWithString: "")
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        ejectButton.image = NSImage(systemSymbolName: "eject.fill", accessibilityDescription: L10n.eject)
+        ejectButton.isBordered = false
+        ejectButton.contentTintColor = .secondaryLabelColor
+        ejectButton.target = self
+        ejectButton.action = #selector(eject)
+        ejectButton.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(imageView)
+        addSubview(label)
+        addSubview(ejectButton)
+        self.imageView = imageView
+        textField = label
+        NSLayoutConstraint.activate([
+            imageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            imageView.widthAnchor.constraint(equalToConstant: 18),
+            label.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 6),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: ejectButton.leadingAnchor, constant: -4),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            ejectButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            ejectButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            ejectButton.widthAnchor.constraint(equalToConstant: 16),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func configure(with volume: VolumeItem) {
+        textField?.stringValue = volume.name
+        imageView?.image = NSImage(systemSymbolName: volume.systemImage, accessibilityDescription: nil)
+        ejectButton.isHidden = !volume.isEjectable
+        ejectButton.toolTip = L10n.eject
+    }
+
+    @objc private func eject() { onEject?() }
+}
+
 // MARK: - NSOutlineViewDataSource
 
 extension SidebarCoordinator: NSOutlineViewDataSource {
 
+    // Top level: the favorite groups, then the Locations header
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-        guard let node = item as? Node else { return groups.count }
-        return node.kind == .group ? (group(for: node)?.items.count ?? 0) : 0
+        guard let node = item as? Node else { return groups.count + 1 }
+        switch node.kind {
+        case .group:         return group(for: node)?.items.count ?? 0
+        case .volumesHeader: return volumes.count
+        case .item, .volume: return 0
+        }
     }
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
-        guard let node = item as? Node, let group = group(for: node) else {
-            return self.node(for: groups[index].id, kind: .group)
+        guard let node = item as? Node else {
+            return index < groups.count ? self.node(for: groups[index].id, kind: .group) : volumesHeaderNode
         }
+        if node.kind == .volumesHeader { return volumeNode(for: volumes[index]) }
+        guard let group = group(for: node) else { return volumesHeaderNode }
         return self.node(for: group.items[index].id, kind: .item)
     }
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
-        (item as? Node)?.kind == .group
+        (item as? Node)?.isHeader == true
     }
 
     // MARK: Drag & Drop
 
     func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
-        guard let node = item as? Node else { return nil }
+        // The Locations section follows the mounted volumes and can't be rearranged
+        guard let node = item as? Node, node.kind == .group || node.kind == .item else { return nil }
         let pbItem = NSPasteboardItem()
         pbItem.setString(node.id.uuidString, forType: Self.favoriteDragType)
         return pbItem
@@ -298,8 +400,8 @@ extension SidebarCoordinator: NSOutlineViewDataSource {
         if let dragged = draggedNode(from: info) {
             return validateReorder(dragged, proposedItem: item as? Node, proposedChildIndex: index)
         }
-        // ファイル一覧などからのファイルは、お気に入りのフォルダの上にドロップしたときだけ移動/コピーする
-        guard let target = item as? Node, target.kind == .item,
+        // ファイル一覧などからのファイルは、お気に入りのフォルダ（またはボリューム）の上にドロップしたときだけ移動/コピーする
+        guard let target = item as? Node, folderURL(for: target) != nil,
               index == NSOutlineViewDropOnItemIndex else { return [] }
         return NSEvent.modifierFlags.contains(.option) ? .copy : .move
     }
@@ -313,19 +415,19 @@ extension SidebarCoordinator: NSOutlineViewDataSource {
                 store?.moveItem(id: dragged.id, toGroup: target.id, at: index)
             case .group:
                 store?.moveGroup(id: dragged.id, to: index)
+            case .volumesHeader, .volume:
+                return false
             }
             return true
         }
 
-        guard let target = item as? Node, let destItem = favoriteItem(for: target),
+        guard let target = item as? Node, let destURL = folderURL(for: target),
               let urls = info.draggingPasteboard.readObjects(
                 forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
               !urls.isEmpty else { return false }
         let isCopy = NSEvent.modifierFlags.contains(.option)
-        for url in urls {
-            if isCopy { viewModel?.copyURL(url, to: destItem.url) }
-            else      { viewModel?.moveURL(url, to: destItem.url) }
-        }
+        if isCopy { viewModel?.copyURLs(urls, to: destURL) }
+        else      { viewModel?.moveURLs(urls, to: destURL) }
         return true
     }
 
@@ -351,15 +453,23 @@ extension SidebarCoordinator: NSOutlineViewDataSource {
                 // 項目の上に落としたらその項目の直後へ
                 guard let parent = outlineView.parent(forItem: target) as? Node else { return [] }
                 outlineView.setDropItem(parent, dropChildIndex: outlineView.childIndex(forItem: target) + 1)
+            case .volumesHeader, .volume:
+                return []
             }
             return .move
 
         case .group:
-            // グループはトップレベルの並びの中でだけ動かす
-            if target == nil, index != NSOutlineViewDropOnItemIndex { return .move }
+            // グループはトップレベルの並びの中でだけ動かす（Locations より下には置かない）
+            if target == nil, index != NSOutlineViewDropOnItemIndex {
+                if index > groups.count { outlineView.setDropItem(nil, dropChildIndex: groups.count) }
+                return .move
+            }
             guard let target, target.kind == .group, let groupIndex = groupIndex(of: target.id) else { return [] }
             outlineView.setDropItem(nil, dropChildIndex: groupIndex)
             return .move
+
+        case .volumesHeader, .volume:
+            return []
         }
     }
 }
@@ -369,7 +479,7 @@ extension SidebarCoordinator: NSOutlineViewDataSource {
 extension SidebarCoordinator: NSOutlineViewDelegate {
 
     func outlineView(_ outlineView: NSOutlineView, isGroupItem item: Any) -> Bool {
-        (item as? Node)?.kind == .group
+        (item as? Node)?.isHeader == true
     }
 
     // クリックは handleClick で移動に使い、選択状態は持たない（移動後に古いハイライトが残らないように）
@@ -390,6 +500,17 @@ extension SidebarCoordinator: NSOutlineViewDelegate {
                 NSImage(systemSymbolName: $0.systemImage, accessibilityDescription: nil)
             }
             return cell
+        case .volumesHeader:
+            let cell = outlineView.makeView(withIdentifier: groupCellID, owner: nil) as? NSTableCellView ?? makeGroupCell()
+            cell.textField?.stringValue = L10n.locations
+            return cell
+        case .volume:
+            let cell = outlineView.makeView(withIdentifier: volumeCellID, owner: nil) as? VolumeCellView
+                ?? VolumeCellView(identifier: volumeCellID)
+            guard let volume = volume(for: node) else { return cell }
+            cell.configure(with: volume)
+            cell.onEject = { VolumesStore.shared.eject(volume) }
+            return cell
         }
     }
 
@@ -402,9 +523,12 @@ extension SidebarCoordinator: NSOutlineViewDelegate {
     }
 
     private func saveExpansion(_ notification: Notification, expanded: Bool) {
-        guard !isApplyingExpansion,
-              let node = notification.userInfo?["NSObject"] as? Node, node.kind == .group,
-              let store else { return }
+        guard !isApplyingExpansion, let node = notification.userInfo?["NSObject"] as? Node else { return }
+        if node.kind == .volumesHeader {
+            UserDefaults.standard.set(expanded, forKey: Self.volumesExpandedKey)
+            return
+        }
+        guard node.kind == .group, let store else { return }
         store.setExpanded(expanded, groupID: node.id)
         // 開閉は画面に反映済みなので、続く updateNSView で作り直さないよう手元の状態も合わせる
         groups = store.groups
@@ -428,8 +552,15 @@ extension SidebarCoordinator: NSMenuDelegate {
                 if store?.canRemoveGroup != true {
                     delete.action = nil
                 }
+            case .volume:
+                if let volume = volume(for: node), volume.isEjectable {
+                    let eject = addMenuItem(to: menu, title: L10n.ejectVolume(name: volume.name), action: #selector(menuEject(_:)), id: nil)
+                    eject.representedObject = volume.url
+                }
+            case .volumesHeader:
+                break
             }
-            menu.addItem(.separator())
+            if menu.numberOfItems > 0 { menu.addItem(.separator()) }
         }
         addMenuItem(to: menu, title: L10n.newGroup, action: #selector(menuNewGroup), id: nil)
         let restore = addMenuItem(to: menu, title: L10n.restoreDefaultFavorites, action: #selector(menuRestoreDefaults), id: nil)

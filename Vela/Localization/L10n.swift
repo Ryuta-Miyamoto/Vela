@@ -58,6 +58,10 @@ enum L10n {
     static var closeWindow: String { tr("Close Window", "ウインドウを閉じる") }
     static var showPreviousTab: String { tr("Show Previous Tab", "前のタブを表示") }
     static var showNextTab: String     { tr("Show Next Tab", "次のタブを表示") }
+    static var dualPane: String        { tr("Dual Pane", "2ペイン表示") }
+    static var switchPane: String      { tr("Switch to Other Pane", "反対側のペインに切り替え") }
+    static var sameFolderInOtherPane: String { tr("Show This Folder in Other Pane", "反対側のペインで同じフォルダを開く") }
+    static var swapPanes: String       { tr("Swap Panes", "左右のペインを入れ替え") }
 
     // MARK: Undo / Redo（ファイル一覧にフォーカスがあるときの Edit メニュー項目）
     static var undo: String { tr("Undo", "取り消す") }
@@ -80,8 +84,13 @@ enum L10n {
     // MARK: Toolbar
     static var enterPath: String       { tr("Enter Path", "パスを入力") }
     static var search: String          { tr("Search", "検索") }
+    static var searchSubfoldersPlaceholder: String { tr("Search Subfolders", "サブフォルダも検索") }
+    static var searchThisFolder: String         { tr("This Folder", "このフォルダ") }
+    static var searchIncludingSubfolders: String { tr("This Folder and Subfolders", "このフォルダとサブフォルダ") }
+    static var searchScopeHelp: String          { tr("Search Scope", "検索範囲") }
     static var showHiddenFiles: String { tr("Show Hidden Files", "隠しファイルを表示") }
     static var hideHiddenFiles: String { tr("Hide Hidden Files", "隠しファイルを非表示") }
+    static var dualPaneHelp: String    { tr("Dual Pane (⌃⌘2)", "2ペイン表示 (⌃⌘2)") }
 
     // MARK: Sidebar
     static var favorites: String { tr("Favorites", "よく使う項目") }
@@ -105,7 +114,18 @@ enum L10n {
            "このグループの\(count)個のお気に入りも削除されます。フォルダ自体は削除されません。")
     }
 
-    static var favoriteHome: String         { tr("Home", "ホーム") }
+    static var locations: String { tr("Locations", "場所") }
+    static var eject: String     { tr("Eject", "取り出す") }
+
+    static func ejectVolume(name: String) -> String {
+        tr("Eject \"\(name)\"", "「\(name)」を取り出す")
+    }
+
+    static func ejectFailed(name: String) -> String {
+        tr("Couldn't eject \"\(name)\"", "「\(name)」を取り出せませんでした")
+    }
+
+    static var favoriteHome: String        { tr("Home", "ホーム") }
     static var favoriteDesktop: String      { tr("Desktop", "デスクトップ") }
     static var favoriteDocuments: String    { tr("Documents", "書類") }
     static var favoriteDownloads: String    { tr("Downloads", "ダウンロード") }
@@ -118,8 +138,16 @@ enum L10n {
     static var columnDateCreated: String  { tr("Date Created", "作成日") }
     static var columnKind: String         { tr("Kind", "種類") }
 
+    static var columnLocation: String     { tr("Location", "場所") }
+
     static func searchResult(query: String, count: Int) -> String {
         tr("\"\(query)\": \(count) \(count == 1 ? "item" : "items")", "「\(query)」: \(count) 件")
+    }
+
+    static var searchingSubfolders: String { tr("Searching subfolders…", "サブフォルダを検索中…") }
+
+    static func searchLimitReached(_ limit: Int) -> String {
+        tr("Showing the first \(limit) results", "最初の\(limit)件を表示しています")
     }
 
     // MARK: Status Bar
@@ -131,9 +159,52 @@ enum L10n {
         tr("\(count) selected", "\(count)個選択")
     }
 
+    // MARK: File Operation Progress
+    static func transferTitle(kind: FileOperationQueue.Kind, name: String, count: Int) -> String {
+        switch (kind, count) {
+        case (.copy, 1): return tr("Copying \"\(name)\"", "「\(name)」をコピー中")
+        case (.copy, _): return tr("Copying \(count) items", "\(count)項目をコピー中")
+        case (.move, 1): return tr("Moving \"\(name)\"", "「\(name)」を移動中")
+        case (.move, _): return tr("Moving \(count) items", "\(count)項目を移動中")
+        }
+    }
+
+    static var preparingTransfer: String { tr("Preparing…", "準備中…") }
+    static var cancellingTransfer: String { tr("Cancelling…", "キャンセル中…") }
+    static var cancelTransferHelp: String { tr("Stop", "中止") }
+
+    static func transferBytes(completed: String, total: String) -> String {
+        tr("\(completed) of \(total)", "\(total)中\(completed)")
+    }
+
+    static func queuedTransfers(_ count: Int) -> String {
+        tr("+\(count) waiting", "ほか\(count)件待機中")
+    }
+
+    static func transferFailed(kind: FileOperationQueue.Kind, name: String) -> String {
+        switch kind {
+        case .copy: return tr("Couldn't copy \"\(name)\"", "「\(name)」をコピーできませんでした")
+        case .move: return tr("Couldn't move \"\(name)\"", "「\(name)」を移動できませんでした")
+        }
+    }
+
+    static func transferFailed(kind: FileOperationQueue.Kind, count: Int) -> String {
+        switch kind {
+        case .copy: return tr("Couldn't copy \(count) items", "\(count)項目をコピーできませんでした")
+        case .move: return tr("Couldn't move \(count) items", "\(count)項目を移動できませんでした")
+        }
+    }
+
     // MARK: Context Menu
     static var newFolder: String            { tr("New Folder", "新規フォルダ") }
     static var open: String                 { tr("Open", "開く") }
+    static var openWith: String             { tr("Open With", "このアプリケーションで開く") }
+    static var otherApp: String             { tr("Other…", "その他…") }
+
+    static func defaultApp(_ name: String) -> String {
+        tr("\(name) (default)", "\(name)（デフォルト）")
+    }
+
     static var showPackageContents: String  { tr("Show Package Contents", "パッケージの内容を表示") }
     static var share: String                { tr("Share", "共有") }
     static var rename: String               { tr("Rename", "名前を変更") }
@@ -146,6 +217,8 @@ enum L10n {
     static var paste: String                { tr("Paste", "ペースト") }
     static var moveItemHere: String         { tr("Move Item Here", "ここに項目を移動") }
     static var openInTerminal: String       { tr("Open in Terminal", "ターミナルで開く") }
+    static var copyToOtherPane: String      { tr("Copy to Other Pane (F5)", "反対側のペインにコピー (F5)") }
+    static var moveToOtherPane: String      { tr("Move to Other Pane (F6)", "反対側のペインに移動 (F6)") }
 
     // 複製・エイリアスの名前に付ける語（Finder と同じ表記。例: "Report copy.pdf" / "Report のコピー.pdf"）
     static var copySuffix: String  { tr(" copy", " のコピー") }

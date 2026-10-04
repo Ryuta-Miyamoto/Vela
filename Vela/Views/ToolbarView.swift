@@ -9,14 +9,14 @@ import SwiftUI
 
 struct ToolbarView: View {
     @Bindable var viewModel: FileExplorerViewModel
+    // In dual pane mode the address bars are in the panes, so the toolbar leaves it out
+    var showsAddressBar = true
+    var isDualPane = false
+    var onToggleDualPane: () -> Void = {}
 
-    @State private var isEditing = false
-    @State private var editingPath = ""
-    @State private var hoveredIndex: Int? = nil
+    @Bindable private var displaySettings = FileDisplaySettings.shared
+
     @FocusState private var searchFocused: Bool
-    @FocusState private var pathFieldFocused: Bool
-
-    private var pathComponents: [String] { viewModel.currentURL.pathComponents }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -29,21 +29,11 @@ struct ToolbarView: View {
 
             Divider().frame(height: 18)
 
-            addressBar
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color(nsColor: .textBackgroundColor))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(isEditing ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
-                        )
-                )
-                .contextMenu {
-                    Button(L10n.openInTerminal) { viewModel.openInTerminal(viewModel.currentURL) }
-                }
+            if showsAddressBar {
+                AddressBarView(viewModel: viewModel)
+            } else {
+                Spacer()
+            }
 
             Button { viewModel.openInTerminal(viewModel.currentURL) } label: {
                 Image(systemName: "terminal")
@@ -66,14 +56,108 @@ struct ToolbarView: View {
                 Image(systemName: FileDisplaySettings.shared.showHiddenFiles ? "eye" : "eye.slash")
             }
             .help(FileDisplaySettings.shared.showHiddenFiles ? L10n.hideHiddenFiles : L10n.showHiddenFiles)
+
+            // ⌃⌘2 is assigned in the View menu (ViewCommands in VelaApp)
+            Button(action: onToggleDualPane) {
+                Image(systemName: isDualPane ? "rectangle.split.2x1.fill" : "rectangle.split.2x1")
+            }
+            .help(L10n.dualPaneHelp)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(.bar)
-        .onChange(of: viewModel.id) { _, _ in resetEditing() }
-        // タブ切り替えだけでなく、ファイル一覧のダブルクリックや戻る/進むなど
-        // 編集モード以外の経路でパスが変わった時も編集モードを抜ける
-        .onChange(of: viewModel.currentURL) { _, _ in resetEditing() }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 4) {
+            // Like Finder's search scope: this folder only, or this folder and its subfolders
+            Menu {
+                Picker(selection: $displaySettings.searchIncludesSubfolders) {
+                    Text(L10n.searchThisFolder).tag(false)
+                    Text(L10n.searchIncludingSubfolders).tag(true)
+                } label: {
+                    EmptyView()
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Image(systemName: displaySettings.searchIncludesSubfolders ? "magnifyingglass.circle.fill" : "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(L10n.searchScopeHelp)
+
+            TextField(displaySettings.searchIncludesSubfolders ? L10n.searchSubfoldersPlaceholder : L10n.search,
+                      text: $viewModel.searchText)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .onKeyPress(.escape) {
+                    viewModel.searchText = ""
+                    searchFocused = false
+                    return .handled
+                }
+
+            if !viewModel.searchText.isEmpty {
+                Button {
+                    viewModel.searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .frame(width: 200)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(nsColor: .textBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(searchFocused ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+}
+
+// MARK: - Address Bar
+
+// Breadcrumbs of the current folder; click a component to go there, or click the empty area to type a path.
+// Shown in the toolbar, or above each pane in dual pane mode
+struct AddressBarView: View {
+    var viewModel: FileExplorerViewModel
+
+    @State private var isEditing = false
+    @State private var editingPath = ""
+    @State private var hoveredIndex: Int? = nil
+    @FocusState private var pathFieldFocused: Bool
+
+    private var pathComponents: [String] { viewModel.currentURL.pathComponents }
+
+    var body: some View {
+        addressBar
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(nsColor: .textBackgroundColor))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(isEditing ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
+                    )
+            )
+            .contextMenu {
+                Button(L10n.openInTerminal) { viewModel.openInTerminal(viewModel.currentURL) }
+            }
+            .onChange(of: viewModel.id) { _, _ in resetEditing() }
+            // タブ切り替えだけでなく、ファイル一覧のダブルクリックや戻る/進むなど
+            // 編集モード以外の経路でパスが変わった時も編集モードを抜ける
+            .onChange(of: viewModel.currentURL) { _, _ in resetEditing() }
     }
 
     private func resetEditing() {
@@ -118,45 +202,6 @@ struct ToolbarView: View {
             .contentShape(Rectangle())
             .onTapGesture { enterEditMode() }
         }
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .font(.caption)
-
-            TextField(L10n.search, text: $viewModel.searchText)
-                .textFieldStyle(.plain)
-                .focused($searchFocused)
-                .onKeyPress(.escape) {
-                    viewModel.searchText = ""
-                    searchFocused = false
-                    return .handled
-                }
-
-            if !viewModel.searchText.isEmpty {
-                Button {
-                    viewModel.searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .frame(width: 180)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color(nsColor: .textBackgroundColor))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(searchFocused ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
-                )
-        )
     }
 
     private func enterEditMode() {
