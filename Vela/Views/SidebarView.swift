@@ -322,10 +322,8 @@ extension SidebarCoordinator: NSOutlineViewDataSource {
                 forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
               !urls.isEmpty else { return false }
         let isCopy = NSEvent.modifierFlags.contains(.option)
-        for url in urls {
-            if isCopy { viewModel?.copyURL(url, to: destItem.url) }
-            else      { viewModel?.moveURL(url, to: destItem.url) }
-        }
+        if isCopy { viewModel?.copyURLs(urls, to: destItem.url) }
+        else      { viewModel?.moveURLs(urls, to: destItem.url) }
         return true
     }
 

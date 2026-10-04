@@ -307,13 +307,13 @@ final class FileTableCoordinator: NSObject {
 
     private func handlePaste() {
         guard let currentURL = viewModel?.currentURL else { return }
-        for url in pasteboardFileURLs() { viewModel?.copyURL(url, to: currentURL) }
+        viewModel?.copyURLs(pasteboardFileURLs(), to: currentURL)
     }
 
     // Finder の ⌥⌘V と同じく、クリップボードのファイルをコピーではなく移動する（カット＆ペースト）
     private func handleMoveItemHere() {
         guard let currentURL = viewModel?.currentURL else { return }
-        for url in pasteboardFileURLs() { viewModel?.moveURL(url, to: currentURL) }
+        viewModel?.moveURLs(pasteboardFileURLs(), to: currentURL)
     }
 
     private var selectedItems: [FileItem] {
@@ -383,10 +383,8 @@ extension FileTableCoordinator: NSTableViewDataSource {
         let sources = info.draggingPasteboard
             .readObjects(forClasses: [NSURL.self], options: nil)?
             .compactMap { $0 as? URL } ?? []
-        for src in sources {
-            if isCopy { viewModel?.copyURL(src, to: destURL) }
-            else      { viewModel?.moveURL(src, to: destURL) }
-        }
+        if isCopy { viewModel?.copyURLs(sources, to: destURL) }
+        else      { viewModel?.moveURLs(sources, to: destURL) }
         return true
     }
 

@@ -131,6 +131,42 @@ enum L10n {
         tr("\(count) selected", "\(count)個選択")
     }
 
+    // MARK: File Operation Progress
+    static func transferTitle(kind: FileOperationQueue.Kind, name: String, count: Int) -> String {
+        switch (kind, count) {
+        case (.copy, 1): return tr("Copying \"\(name)\"", "「\(name)」をコピー中")
+        case (.copy, _): return tr("Copying \(count) items", "\(count)項目をコピー中")
+        case (.move, 1): return tr("Moving \"\(name)\"", "「\(name)」を移動中")
+        case (.move, _): return tr("Moving \(count) items", "\(count)項目を移動中")
+        }
+    }
+
+    static var preparingTransfer: String { tr("Preparing…", "準備中…") }
+    static var cancellingTransfer: String { tr("Cancelling…", "キャンセル中…") }
+    static var cancelTransferHelp: String { tr("Stop", "中止") }
+
+    static func transferBytes(completed: String, total: String) -> String {
+        tr("\(completed) of \(total)", "\(total)中\(completed)")
+    }
+
+    static func queuedTransfers(_ count: Int) -> String {
+        tr("+\(count) waiting", "ほか\(count)件待機中")
+    }
+
+    static func transferFailed(kind: FileOperationQueue.Kind, name: String) -> String {
+        switch kind {
+        case .copy: return tr("Couldn't copy \"\(name)\"", "「\(name)」をコピーできませんでした")
+        case .move: return tr("Couldn't move \"\(name)\"", "「\(name)」を移動できませんでした")
+        }
+    }
+
+    static func transferFailed(kind: FileOperationQueue.Kind, count: Int) -> String {
+        switch kind {
+        case .copy: return tr("Couldn't copy \(count) items", "\(count)項目をコピーできませんでした")
+        case .move: return tr("Couldn't move \(count) items", "\(count)項目を移動できませんでした")
+        }
+    }
+
     // MARK: Context Menu
     static var newFolder: String            { tr("New Folder", "新規フォルダ") }
     static var open: String                 { tr("Open", "開く") }

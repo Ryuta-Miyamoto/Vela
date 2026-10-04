@@ -160,22 +160,20 @@ final class FileExplorerViewModel {
 
     // Finder の ⌘D と同じく、同じフォルダに「<名前> copy」を作る
     func duplicateItems(_ items: [FileItem]) {
-        for item in items {
-            let dest = Self.uniqueURL(in: item.url.deletingLastPathComponent(),
-                                      baseName: item.url.deletingPathExtension().lastPathComponent,
-                                      pathExtension: item.url.pathExtension,
-                                      suffix: L10n.copySuffix)
-            try? FileOperations.copy(from: item.url, to: dest, actionName: L10n.duplicate)
+        let requests = items.map {
+            FileOperationQueue.Request(source: $0.url,
+                                       destinationFolder: $0.url.deletingLastPathComponent(),
+                                       nameRule: .uniqueCopy(suffix: L10n.copySuffix))
         }
-        reload()
+        FileOperationQueue.shared.enqueue(.copy, requests, actionName: L10n.duplicate) { [weak self] in self?.reload() }
     }
 
     // Finder と同じく、拡張子も含めた名前の後ろに「alias」を付ける（例: "Report.pdf alias"）
     func makeAliases(for items: [FileItem]) {
         for item in items {
-            let dest = Self.uniqueURL(in: item.url.deletingLastPathComponent(),
-                                      baseName: item.name, pathExtension: "",
-                                      suffix: L10n.aliasSuffix)
+            let dest = FileOperations.uniqueURL(in: item.url.deletingLastPathComponent(),
+                                                baseName: item.name, pathExtension: "",
+                                                suffix: L10n.aliasSuffix)
             do {
                 try FileOperations.makeAlias(of: item.url, at: dest)
             } catch {
@@ -196,21 +194,6 @@ final class FileExplorerViewModel {
         url.deletingLastPathComponent().standardizedFileURL.path == folder.standardizedFileURL.path
     }
 
-    // 「<base><suffix>.<ext>」、既にあれば「<base><suffix> 2.<ext>」…と空いている名前を探す
-    private static func uniqueURL(in folder: URL, baseName: String, pathExtension: String, suffix: String) -> URL {
-        func url(_ name: String) -> URL {
-            let u = folder.appendingPathComponent(name)
-            return pathExtension.isEmpty ? u : u.appendingPathExtension(pathExtension)
-        }
-        var candidate = url(baseName + suffix)
-        var counter = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = url("\(baseName)\(suffix) \(counter)")
-            counter += 1
-        }
-        return candidate
-    }
-
     func moveItem(_ item: FileItem) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -219,8 +202,7 @@ final class FileExplorerViewModel {
         panel.prompt = L10n.moveHere
         panel.message = L10n.chooseMoveDestination(name: item.name)
         guard panel.runModal() == .OK, let dest = panel.url else { return }
-        try? FileOperations.move(from: item.url, to: dest.appendingPathComponent(item.name), actionName: L10n.move)
-        reload()
+        moveURLs([item.url], to: dest)
     }
 
     func trashItem(_ item: FileItem) {
@@ -242,27 +224,25 @@ final class FileExplorerViewModel {
         reload()
     }
 
-    func moveURL(_ source: URL, to destFolder: URL) {
-        guard source != destFolder,
-              !Self.isParent(destFolder, of: source),
-              !destFolder.path.hasPrefix(source.path + "/") else { return }
-        let dest = destFolder.appendingPathComponent(source.lastPathComponent)
-        try? FileOperations.move(from: source, to: dest, actionName: L10n.move)
-        reload()
+    // Copies and moves run in the background (FileOperationQueue); the list reloads when the job ends
+    func moveURLs(_ sources: [URL], to destFolder: URL) {
+        let requests = sources
+            .filter {
+                $0 != destFolder && !Self.isParent(destFolder, of: $0) && !destFolder.path.hasPrefix($0.path + "/")
+            }
+            .map { FileOperationQueue.Request(source: $0, destinationFolder: destFolder, nameRule: .keep) }
+        FileOperationQueue.shared.enqueue(.move, requests, actionName: L10n.move) { [weak self] in self?.reload() }
     }
 
-    func copyURL(_ source: URL, to destFolder: URL) {
-        guard source != destFolder,
-              !destFolder.path.hasPrefix(source.path + "/") else { return }
-        // 同じフォルダへのペーストは名前がぶつかるので、Finder と同じく複製として扱う
-        let dest = Self.isParent(destFolder, of: source)
-            ? Self.uniqueURL(in: destFolder,
-                             baseName: source.deletingPathExtension().lastPathComponent,
-                             pathExtension: source.pathExtension,
-                             suffix: L10n.copySuffix)
-            : destFolder.appendingPathComponent(source.lastPathComponent)
-        try? FileOperations.copy(from: source, to: dest)
-        if destFolder == currentURL { reload() }
+    func copyURLs(_ sources: [URL], to destFolder: URL) {
+        let requests = sources
+            .filter { $0 != destFolder && !destFolder.path.hasPrefix($0.path + "/") }
+            .map {
+                // 同じフォルダへのペーストは名前がぶつかるので、Finder と同じく複製として扱う
+                FileOperationQueue.Request(source: $0, destinationFolder: destFolder,
+                                           nameRule: Self.isParent(destFolder, of: $0) ? .uniqueCopy(suffix: L10n.copySuffix) : .keep)
+            }
+        FileOperationQueue.shared.enqueue(.copy, requests, actionName: L10n.copy) { [weak self] in self?.reload() }
     }
 }
 

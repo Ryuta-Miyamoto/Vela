@@ -22,6 +22,11 @@ enum FileOperations {
 
     static func move(from source: URL, to dest: URL, actionName: String) throws {
         try FileManager.default.moveItem(at: source, to: dest)
+        registerMove(from: source, to: dest, actionName: actionName)
+    }
+
+    // Records a move that has already been done elsewhere (e.g. by FileOperationQueue) so it can be undone
+    static func registerMove(from source: URL, to dest: URL, actionName: String) {
         register(actionName: actionName) {
             try move(from: dest, to: source, actionName: actionName)
         }
@@ -34,11 +39,6 @@ enum FileOperations {
         register(actionName: L10n.moveToTrash) {
             try move(from: trashedURL, to: url, actionName: L10n.moveToTrash)
         }
-    }
-
-    static func copy(from source: URL, to dest: URL, actionName: String = L10n.copy) throws {
-        try FileManager.default.copyItem(at: source, to: dest)
-        registerCreation(of: dest, actionName: actionName)
     }
 
     // Finder の「エイリアスを作成」と同じ形式（ブックマークファイル）。元の項目が移動しても追従できる
@@ -63,6 +63,22 @@ enum FileOperations {
                 try move(from: trashedURL, to: url, actionName: actionName)
             }
         }
+    }
+
+    // Finds a free name: "<base><suffix>.<ext>", then "<base><suffix> 2.<ext>", and so on.
+    // Nonisolated so FileOperationQueue can resolve names on its worker queue right before copying
+    nonisolated static func uniqueURL(in folder: URL, baseName: String, pathExtension: String, suffix: String) -> URL {
+        func url(_ name: String) -> URL {
+            let u = folder.appendingPathComponent(name)
+            return pathExtension.isEmpty ? u : u.appendingPathExtension(pathExtension)
+        }
+        var candidate = url(baseName + suffix)
+        var counter = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = url("\(baseName)\(suffix) \(counter)")
+            counter += 1
+        }
+        return candidate
     }
 
     private static func register(actionName: String, inverse: @escaping () throws -> Void) {
