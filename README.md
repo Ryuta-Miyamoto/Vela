@@ -34,7 +34,7 @@ A simple macOS file explorer app built with SwiftUI and AppKit.
 - **Show Package Contents** — Right-click an app or package to browse its contents
 - **Rename** — Select an item and press `Return`, or use the context menu, then enter the new name in the dialog
 - **New Folder** — `Cmd+Shift+N` or right-click on an empty area
-- **Copy** — Context menu "Copy" copies the file; `Cmd+C` copies the path as text; "Copy Name" / "Copy Path" copy the name or full path as text
+- **Copy** — `Cmd+C` or context menu "Copy" copies the files, like Finder: paste them with `Cmd+V` in Vela or Finder, or paste into a text field or Terminal to get their paths. `Cmd+Option+C` or "Copy Path" copies only the full paths as text (Finder's Copy as Pathname); "Copy Name" copies the names
 - **Paste** — `Cmd+V` copies files on the clipboard into the current folder (pasting into the same folder makes a copy named `<name> copy`)
 - **Move Item Here (Cut & Paste)** — `Cmd+Option+V` moves files on the clipboard into the current folder. Also available from the context menu on an empty area
 - **Duplicate** — `Cmd+D` or context menu creates `<name> copy` in the same folder
@@ -170,7 +170,7 @@ macOS 向けのシンプルなファイルエクスプローラーアプリで�
 - **パッケージの内容を表示** — アプリやパッケージを右クリックして中身を表示
 - **名前変更** — 項目を選択して `Return` キー、またはコンテキストメニューから、ダイアログに新しい名前を入力
 - **新規フォルダ作成** — `Cmd+Shift+N`、またはコンテキストメニュー（空白部分を右クリック）
-- **コピー** — コンテキストメニューの「コピー」でファイルをコピー。`Cmd+C` はパスをテキストとしてコピー
+- **コピー** — `Cmd+C` またはコンテキストメニューの「コピー」で、Finder と同じくファイルをコピー。Vela や Finder で `Cmd+V` するとファイルを貼り付け、テキスト欄やターミナルに貼り付けるとパスが入る。`Cmd+Option+C` または「パスをコピー」でフルパスだけをテキストとしてコピー（Finder の「パス名をコピー」と同じ）。「名前をコピー」で名前をコピー
 - **ペースト** — `Cmd+V` でクリップボードのファイルを現在のフォルダにコピー（同じフォルダへのペーストは「<名前> のコピー」を作成）
 - **ここに項目を移動（カット＆ペースト）** — `Cmd+Option+V` でクリップボードのファイルを現在のフォルダへ移動。空白部分の右クリックメニューからも可能
 - **複製** — `Cmd+D`、またはコンテキストメニューで同じフォルダに「<名前> のコピー」を作成

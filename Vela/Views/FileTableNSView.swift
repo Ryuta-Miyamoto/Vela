@@ -188,6 +188,7 @@ final class FileTableCoordinator: NSObject {
         tableView.onCmdUp      = { [weak self] in self?.viewModel?.goUp() }
         tableView.onCmdDown    = { [weak self] in self?.handleCmdDown() }
         tableView.onCopy       = { [weak self] in self?.handleCopy() }
+        tableView.onCopyPath   = { [weak self] in self?.handleCopyPath() }
         tableView.onPaste      = { [weak self] in self?.handlePaste() }
         tableView.onCmdShiftN  = { [weak self] in self?.viewModel?.createFolder() }
         tableView.onMiddleClick = { [weak self] row in self?.handleMiddleClick(row: row) }
@@ -280,6 +281,7 @@ final class FileTableCoordinator: NSObject {
     // focus to its list. Only on the change, so focus in the search field or address bar isn't taken away
     func applyActive(_ active: Bool) {
         defer { isActive = active }
+        tableView.isInActivePane = active
         guard active, isActive == false, let window = tableView.window,
               window.firstResponder !== tableView else { return }
         window.makeFirstResponder(tableView)
@@ -391,10 +393,13 @@ final class FileTableCoordinator: NSObject {
         onOpenInNewTab?(item.url)
     }
 
+    // ⌘C copies the files (with their paths as text); ⌥⌘C copies only the paths, like Finder's Copy as Pathname
     private func handleCopy() {
-        let paths = tableView.selectedRowIndexes
-            .compactMap { $0 < items.count ? items[$0].url.path : nil }
-        copyStrings(paths)
+        viewModel?.copyItems(selectedItems)
+    }
+
+    private func handleCopyPath() {
+        copyStrings(selectedItems.map(\.url.path))
     }
 
     private func copyStrings(_ strings: [String]) {
@@ -638,9 +643,14 @@ extension FileTableCoordinator: NSMenuDelegate {
             addMenuItem(to: menu, title: L10n.share, action: #selector(menuShareItem))
             menu.addItem(.separator())
             addMenuItem(to: menu, title: L10n.rename, action: #selector(menuRenameItem))
-            addMenuItem(to: menu, title: L10n.copy, action: #selector(menuCopyItem))
+            // The shortcuts are only displayed here; the keys themselves are handled by ResponsiveTableView
+            let copyItem = addMenuItem(to: menu, title: L10n.copy, action: #selector(menuCopyItem))
+            copyItem.keyEquivalent = "c"
+            copyItem.keyEquivalentModifierMask = .command
             addMenuItem(to: menu, title: L10n.copyName, action: #selector(menuCopyName))
-            addMenuItem(to: menu, title: L10n.copyPath, action: #selector(menuCopyPath))
+            let copyPathItem = addMenuItem(to: menu, title: L10n.copyPath, action: #selector(menuCopyPath))
+            copyPathItem.keyEquivalent = "c"
+            copyPathItem.keyEquivalentModifierMask = [.command, .option]
             addMenuItem(to: menu, title: L10n.duplicate, action: #selector(menuDuplicateItem))
             addMenuItem(to: menu, title: L10n.makeAlias, action: #selector(menuMakeAlias))
             addMenuItem(to: menu, title: L10n.move, action: #selector(menuMoveItem))
@@ -939,6 +949,10 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
     var onCmdUp:     (() -> Void)?
     var onCmdDown:   (() -> Void)?
     var onCopy:      (() -> Void)?
+    var onCopyPath:  (() -> Void)?
+    // Key equivalents reach every list in the window, so in dual pane mode only the active pane's list
+    // handles the ones that work without focus (⌘↑ / ⌘↓ / ⇧⌘N). Always true in single pane mode
+    var isInActivePane = true
     var onPaste:     (() -> Void)?
     var onCmdShiftN: (() -> Void)?
     var onMiddleClick: ((Int) -> Void)?
@@ -992,7 +1006,7 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard flags.contains(.command) else { return super.performKeyEquivalent(with: event) }
+        guard flags.contains(.command), isInActivePane else { return super.performKeyEquivalent(with: event) }
         let shift = flags.contains(.shift)
 
         switch event.keyCode {
@@ -1016,6 +1030,7 @@ final class ResponsiveTableView: NSTableView, QLPreviewPanelDataSource {
         // charactersIgnoringModifiers は Shift 以外の修飾キーを無視するので、⌥⌘V も "v" で届く
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "v" where option && !shift && !control: onMoveItemHere?(); return true  // ⌥⌘V
+        case "c" where option && !shift && !control: onCopyPath?(); return true      // ⌥⌘C
         case "d" where !option && !shift && !control: onDuplicate?(); return true    // ⌘D
         case "a" where control && !option && !shift: onMakeAlias?(); return true     // ⌃⌘A
         default: break
