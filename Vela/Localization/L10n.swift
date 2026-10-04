@@ -170,6 +170,13 @@ enum L10n {
     // MARK: Context Menu
     static var newFolder: String            { tr("New Folder", "新規フォルダ") }
     static var open: String                 { tr("Open", "開く") }
+    static var openWith: String             { tr("Open With", "このアプリケーションで開く") }
+    static var otherApp: String             { tr("Other…", "その他…") }
+
+    static func defaultApp(_ name: String) -> String {
+        tr("\(name) (default)", "\(name)（デフォルト）")
+    }
+
     static var showPackageContents: String  { tr("Show Package Contents", "パッケージの内容を表示") }
     static var share: String                { tr("Share", "共有") }
     static var rename: String               { tr("Rename", "名前を変更") }

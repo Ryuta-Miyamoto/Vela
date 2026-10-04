@@ -72,6 +72,8 @@ final class FileTableCoordinator: NSObject {
     private var isUpdatingSortIndicator = false
     // show(relativeTo:of:preferredEdge:) はピッカーを保持しないため、表示中は強参照が必要
     private var sharingPicker: NSSharingServicePicker?
+    // Items the Open With submenu acts on, captured when the context menu is built
+    private var openWithTargets: [URL] = []
 
     let tableView = ResponsiveTableView()
 
@@ -491,6 +493,10 @@ extension FileTableCoordinator: NSMenuDelegate {
         } else {
             let item = items[row]
             addMenuItem(to: menu, title: L10n.open, action: #selector(menuOpenItem))
+            // Folders open in Vela and apps launch themselves, so only documents and document packages get Open With
+            if !item.isDirectory || (item.isPackage && item.url.pathExtension.lowercased() != "app") {
+                addOpenWithMenuItem(to: menu, forClickedRow: row)
+            }
             if item.isPackage {
                 addMenuItem(to: menu, title: L10n.showPackageContents, action: #selector(menuShowPackageContents))
             }
@@ -541,6 +547,78 @@ extension FileTableCoordinator: NSMenuDelegate {
         let row = tableView.clickedRow
         guard row >= 0, row < items.count else { return }
         viewModel?.openItem(items[row])
+    }
+
+    // MARK: Open With
+
+    // Apps are listed for the clicked item; the chosen app then opens every targeted item, like Finder
+    private func addOpenWithMenuItem(to menu: NSMenu, forClickedRow row: Int) {
+        let targetURL = items[row].url
+        openWithTargets = contextTargets(forClickedRow: row).map(\.url)
+
+        let workspace = NSWorkspace.shared
+        let defaultApp = workspace.urlForApplication(toOpen: targetURL)
+        var seen = Set<String>()
+        let otherApps = workspace.urlsForApplications(toOpen: targetURL)
+            .filter { $0.standardizedFileURL != defaultApp?.standardizedFileURL }
+            .filter { seen.insert($0.standardizedFileURL.path).inserted }
+            .sorted { Self.appName($0).localizedStandardCompare(Self.appName($1)) == .orderedAscending }
+
+        let submenu = NSMenu()
+        if let defaultApp {
+            addAppMenuItem(to: submenu, app: defaultApp, title: L10n.defaultApp(Self.appName(defaultApp)))
+            if !otherApps.isEmpty { submenu.addItem(.separator()) }
+        }
+        for app in otherApps {
+            addAppMenuItem(to: submenu, app: app, title: Self.appName(app))
+        }
+        if defaultApp != nil || !otherApps.isEmpty { submenu.addItem(.separator()) }
+        addMenuItem(to: submenu, title: L10n.otherApp, action: #selector(menuOpenWithOther))
+
+        let parent = NSMenuItem(title: L10n.openWith, action: nil, keyEquivalent: "")
+        parent.submenu = submenu
+        menu.addItem(parent)
+    }
+
+    private func addAppMenuItem(to menu: NSMenu, app: URL, title: String) {
+        let menuItem = addMenuItem(to: menu, title: title, action: #selector(menuOpenWithApp(_:)))
+        menuItem.representedObject = app
+        let icon = NSWorkspace.shared.icon(forFile: app.path)
+        icon.size = NSSize(width: 16, height: 16)
+        menuItem.image = icon
+    }
+
+    private static func appName(_ app: URL) -> String {
+        FileManager.default.displayName(atPath: app.path)
+            .replacingOccurrences(of: ".app", with: "", options: [.anchored, .backwards, .caseInsensitive])
+    }
+
+    @objc private func menuOpenWithApp(_ sender: NSMenuItem) {
+        guard let app = sender.representedObject as? URL else { return }
+        open(openWithTargets, withApplicationAt: app)
+    }
+
+    @objc private func menuOpenWithOther() {
+        let targets = openWithTargets
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = L10n.open
+        guard let window = tableView.window else { return }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let app = panel.url else { return }
+            self?.open(targets, withApplicationAt: app)
+        }
+    }
+
+    private func open(_ urls: [URL], withApplicationAt app: URL) {
+        guard !urls.isEmpty else { return }
+        NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+            if let error { NSLog("Failed to open with \(app.path): \(error)") }
+        }
     }
 
     @objc private func menuShowPackageContents() {
